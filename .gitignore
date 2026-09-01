@@ -1,0 +1,118 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging / build
+build/
+dist/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# =========================
+# Playwright / browser tools
+# =========================
+playwright-report/
+test-results/
+.browser_cache/
+.mcp-cache/
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+*.out
+*.err
+
+# =========================
+# Environment / secrets
+# =========================
+.env
+.env.*
+*.env
+!.env.example
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Generated outputs
+# =========================
+output/
+shared/output/
+shared/generated/
+!shared/generated/.gitkeep
+
+# Screenshots / captures / temporary exports
+**/screenshots/
+**/captures/
+**/exports/
+**/tmp/
+**/temp/
+
+# Archives / imported bundles
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# =========================
+# Local databases / caches
+# =========================
+*.sqlite
+*.sqlite3
+*.db
+.cache/
+
+# =========================
+# Node leftovers (if any old files remain)
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vercel/
+.env*.local
+
+# Local credentials, tunnel state, and transient tunnel output
+info .txt
+info-*.txt
+*.token
+.ngrok2/
+ngrok.yml
+ngrok-*.log
+tunnel-*.log

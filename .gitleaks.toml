@@ -1,0 +1,14 @@
+title = "PFE UX/UI Auditor secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated and vendored files that are not source-controlled inputs"
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.env(?:\..*)?$''',
+  '''(^|/)shared/generated/''',
+  '''(^|/)shared/output/''',
+]
