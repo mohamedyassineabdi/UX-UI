@@ -75,7 +75,7 @@ FIGMA_CA_BUNDLE=
 FIGMA_TRUST_ENV_PROXY=false
 
 # Optional AI review/enrichment
-AI_REVIEW_PROVIDER=ollama
+AI_REVIEW_BACKEND=ollama
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=llama3.2
 OLLAMA_API_KEY=

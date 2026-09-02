@@ -1180,7 +1180,6 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     recommendations = payload.get("recommendations") or []
     is_screenshot_audit = clean_text(payload.get("mode")).lower() == "screenshot"
     is_live_mobile_audit = clean_text(payload.get("generator")) == "src.mobile_audit.generate_mobile_audit"
-    is_reviewed_chatgpt_audit = clean_text(payload.get("generator")) == "scripts.build_chatgpt_gtm_final"
     is_mobile_visual = is_live_mobile_audit or clean_text(payload.get("surfaceType")).lower() in {"mobile", "mobile_app", "mobile-app"}
 
     scanned_pages_data: List[Dict[str, Any]] = []
@@ -1220,16 +1219,13 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     cleaned_path = to_path(clean_text(artifacts.get("cleanedPath")), ROOT_DIR / "shared" / "generated" / "html_cleaned.json")
     rendered_path = to_path(clean_text(artifacts.get("renderedPath")), ROOT_DIR / "shared" / "generated" / "rendered_ui_extraction.json")
     for index, item in enumerate(priorities_data, start=1):
-        if is_reviewed_chatgpt_audit:
-            item["spotlightImage"] = href_from_repo(item.get("screenshotPath", ""), output_dir)
-        else:
-            item["spotlightImage"] = build_screenshot_spotlight(item, output_dir, index, is_mobile_visual=is_mobile_visual) if is_screenshot_audit else build_gtm_spotlight(
-                item=item,
-                output_dir=output_dir,
-                cleaned_path=cleaned_path,
-                rendered_path=rendered_path,
-                issue_index=index,
-            )
+        item["spotlightImage"] = build_screenshot_spotlight(item, output_dir, index, is_mobile_visual=is_mobile_visual) if is_screenshot_audit else build_gtm_spotlight(
+            item=item,
+            output_dir=output_dir,
+            cleaned_path=cleaned_path,
+            rendered_path=rendered_path,
+            issue_index=index,
+        )
         page_key = (
             clean_text(item.get("screenshotPath"))
             if is_mobile_visual
@@ -1258,16 +1254,13 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     axes_data = payload.get("axes") or []
     for index, axis in enumerate(axes_data, start=1):
         lead_item = ((axis.get("painPoints") or [])[:1] or (axis.get("strengths") or [])[:1] or [{}])[0]
-        if is_reviewed_chatgpt_audit:
-            lead_item["spotlightImage"] = href_from_repo(lead_item.get("screenshotPath", ""), output_dir)
-        else:
-            lead_item["spotlightImage"] = build_screenshot_spotlight(lead_item, output_dir, 100 + index, is_mobile_visual=is_mobile_visual) if is_screenshot_audit else build_gtm_spotlight(
-                item=lead_item,
-                output_dir=output_dir,
-                cleaned_path=cleaned_path,
-                rendered_path=rendered_path,
-                issue_index=100 + index,
-            )
+        lead_item["spotlightImage"] = build_screenshot_spotlight(lead_item, output_dir, 100 + index, is_mobile_visual=is_mobile_visual) if is_screenshot_audit else build_gtm_spotlight(
+            item=lead_item,
+            output_dir=output_dir,
+            cleaned_path=cleaned_path,
+            rendered_path=rendered_path,
+            issue_index=100 + index,
+        )
     axes_tiles_html = "".join(render_axis_tile(axis, index) for index, axis in enumerate(axes_data, start=1))
     issue_tabs_html = render_issue_tabs(priorities=priorities_data, axes=axes_data, output_dir=output_dir)
     radar_html = render_radar_chart(axes_data)

@@ -24,11 +24,15 @@ pip-wheel-metadata/
 .pytest_cache/
 .coverage
 .coverage.*
+coverage.xml
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+.pytype/
+.pyre/
 .tox/
 .nox/
+.hypothesis/
 
 # =========================
 # Playwright / browser tools
@@ -37,6 +41,9 @@ playwright-report/
 test-results/
 .browser_cache/
 .mcp-cache/
+.playwright/
+**/*.har
+**/*.trace
 
 # =========================
 # Logs
@@ -53,6 +60,8 @@ logs/
 .env.*
 *.env
 !.env.example
+!*.env.example
+*.token
 
 # =========================
 # IDE / Editor
@@ -74,15 +83,21 @@ desktop.ini
 # =========================
 output/
 shared/output/
-shared/generated/
+shared/generated/*
 !shared/generated/.gitkeep
 
 # Screenshots / captures / temporary exports
 **/screenshots/
 **/captures/
 **/exports/
+artifacts/
+audit-artifacts/
+audit-runs/
+tmp/
+temp/
 **/tmp/
 **/temp/
+*.tmp
 
 # Archives / imported bundles
 *.zip
@@ -116,3 +131,6 @@ info-*.txt
 ngrok.yml
 ngrok-*.log
 tunnel-*.log
+
+# One-off evaluation packages
+chatgpt_handoff/
