@@ -3,10 +3,13 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import logging
 import mimetypes
 import os
+import queue
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -26,6 +29,7 @@ from dotenv import load_dotenv
 from PIL import Image, UnidentifiedImageError
 
 from src.audit.workspace import AuditWorkspace
+from src.jobs import AuditStorageManager, AuditWorker, JobStatus, JobStore
 from src.security.auth import AuthenticatedUser, AuthenticationError, authenticate_bearer, validate_auth_configuration
 from src.security.network_policy import UnsafeURLError, validate_public_url
 from src.security.rate_limit import SlidingWindowRateLimiter
@@ -59,12 +63,27 @@ ANDROID_SYSTEM_PACKAGE_PREFIXES = (
 
 load_dotenv(ROOT_DIR / ".env")
 
-JOBS: dict[str, dict[str, Any]] = {}
-JOBS_LOCK = threading.Lock()
 JOB_PROCESSES: dict[str, subprocess.Popen[str]] = {}
 JOB_PROCESSES_LOCK = threading.Lock()
 CANCELLED_RETURN_CODE = -999
 RATE_LIMITER = SlidingWindowRateLimiter()
+LOG = logging.getLogger("ux_ui.audit")
+JOB_STORE = JobStore.from_environment(ROOT_DIR)
+STORAGE_MANAGER = AuditStorageManager(JOB_STORE, AUDITS_DIR)
+JOB_WORKER: AuditWorker | None = None
+
+
+def _validate_job_backend_configuration() -> None:
+    mode = os.getenv("UX_DEPLOYMENT_MODE", "local").strip().lower()
+    if mode not in {"local", "single-instance", "distributed"}:
+        raise RuntimeError("UX_DEPLOYMENT_MODE must be local, single-instance, or distributed.")
+    if mode == "distributed":
+        raise RuntimeError("distributed mode cannot use the local SQLite job queue; configure a shared PostgreSQL-capable job store before starting.")
+
+
+def _structured_log(level: int, event: str, message: str, **fields: Any) -> None:
+    safe = {key: value for key, value in fields.items() if value not in (None, "") and key not in {"authorization", "token", "password", "api_key"}}
+    LOG.log(level, json.dumps({"timestamp": _now(), "event": event, "message": message, **safe}, ensure_ascii=False))
 
 
 def _env_positive_int(name: str, default: int) -> int:
@@ -315,13 +334,7 @@ def _persist_ownership(job: dict[str, Any]) -> None:
 
 
 def _owned_job(job_id: str, user: AuthenticatedUser) -> dict[str, Any] | None:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        if not job or not job.get("ownerId"):
-            return None
-        if str(job.get("ownerId")) != user.id:
-            return None
-        return job
+    return JOB_STORE.get_owned(job_id, user.id)
 
 
 def _persisted_owner_id(job_id: str) -> str:
@@ -335,11 +348,7 @@ def _persisted_owner_id(job_id: str) -> str:
 
 
 def _user_owns_resource(job_id: str, user: AuthenticatedUser) -> bool:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        if job is not None:
-            return bool(job.get("ownerId")) and str(job.get("ownerId")) == user.id
-    return _persisted_owner_id(job_id) == user.id
+    return JOB_STORE.owns(job_id, user.id) or _persisted_owner_id(job_id) == user.id
 
 
 def _artifact_job_id(target: Path) -> str:
@@ -351,7 +360,7 @@ def _artifact_job_id(target: Path) -> str:
         except (ValueError, FileNotFoundError):
             continue
         for part in relative.parts:
-            if re.fullmatch(r"[a-f0-9]{12}", part) and _ownership_path(part).is_file():
+            if re.fullmatch(r"[a-f0-9]{12}", part) and (JOB_STORE.get(part) is not None or _ownership_path(part).is_file()):
                 return part
     return ""
 
@@ -379,24 +388,23 @@ def _append_log(job_id: str, line: str) -> None:
     clean_line = line.rstrip()
     if not clean_line:
         return
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        if not job:
-            return
-        job["logs"].append(clean_line)
-        job["updatedAt"] = _now()
-        match = STAGE_RE.search(clean_line)
-        if match:
-            current = int(match.group("current"))
-            total = int(match.group("total"))
-            label = match.group("label").strip().strip(".")
-            job["stage"] = label
-            job["progress"] = max(job.get("progress", 0), round((current - 1) / max(total, 1) * 85))
-        screenshot_match = SCREENSHOT_LOG_RE.search(clean_line)
-        if screenshot_match:
-            preview_path = _isolate_preview_artifact(job_id, screenshot_match.group("path").strip())
-            if preview_path:
-                job["previewImagePath"] = str(preview_path)
+    job = JOB_STORE.get(job_id)
+    if not job:
+        return
+    JOB_STORE.event(job_id, "info", "process_output", clean_line, worker_id=str(job.get("workerId") or ""))
+    updates: dict[str, Any] = {}
+    match = STAGE_RE.search(clean_line)
+    if match:
+        current = int(match.group("current")); total = int(match.group("total"))
+        updates["stage"] = match.group("label").strip().strip(".")
+        updates["progress"] = max(int(job.get("progress", 0)), round((current - 1) / max(total, 1) * 85))
+    screenshot_match = SCREENSHOT_LOG_RE.search(clean_line)
+    if screenshot_match:
+        preview_path = _isolate_preview_artifact(job_id, screenshot_match.group("path").strip())
+        if preview_path:
+            updates["previewImagePath"] = str(preview_path)
+    if updates:
+        JOB_STORE.update(job_id, **updates)
 
 
 def _isolate_preview_artifact(job_id: str, raw_path: str) -> Path | None:
@@ -417,26 +425,17 @@ def _isolate_preview_artifact(job_id: str, raw_path: str) -> Path | None:
 
 
 def _set_job(job_id: str, **updates: Any) -> None:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        if not job:
-            return
-        job.update(updates)
-        job["updatedAt"] = _now()
+    JOB_STORE.update(job_id, **updates)
 
 
 def _get_job_status(job_id: str) -> str:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        if not job:
-            return ""
-        return str(job.get("status") or "")
+    job = JOB_STORE.get(job_id)
+    return str(job.get("status") or "") if job else ""
 
 
 def _is_cancel_requested(job_id: str) -> bool:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        return bool(job and job.get("cancelRequested"))
+    job = JOB_STORE.get(job_id)
+    return bool(job and job.get("cancelRequested"))
 
 
 def _mark_job_cancelled(job_id: str) -> None:
@@ -458,9 +457,8 @@ def _finish_if_cancelled(job_id: str) -> bool:
 
 
 def _derive_mobile_failure_error(job_id: str, exit_code: int) -> str:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id) or {}
-        logs = [str(line or "") for line in job.get("logs", [])]
+    job = JOB_STORE.get(job_id) or {}
+    logs = [str(line or "") for line in job.get("logs", [])]
 
     combined = "\n".join(logs)
     if "Neither ANDROID_HOME nor ANDROID_SDK_ROOT environment variable was exported" in combined:
@@ -487,9 +485,8 @@ def _derive_mobile_failure_error(job_id: str, exit_code: int) -> str:
 
 
 def _derive_website_pipeline_failure_error(job_id: str, exit_code: int) -> str:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id) or {}
-        logs = [str(line or "") for line in job.get("logs", [])]
+    job = JOB_STORE.get(job_id) or {}
+    logs = [str(line or "") for line in job.get("logs", [])]
 
     combined = "\n".join(logs)
     if "unable to verify the first certificate" in combined.lower():
@@ -534,42 +531,34 @@ def _terminate_process(process: subprocess.Popen[str]) -> None:
             pass
 
     try:
-        process.terminate()
+        if hasattr(os, "killpg"):
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
         process.wait(timeout=5)
         return
     except subprocess.TimeoutExpired:
         pass
     except Exception:
         return
-
     try:
-        process.kill()
+        if hasattr(os, "killpg"):
+            os.killpg(process.pid, signal.SIGKILL)
+        else:
+            process.kill()
     except Exception:
         pass
 
 
 def _cancel_job(job_id: str) -> tuple[dict[str, Any] | None, bool]:
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
-        if not job:
-            return None, False
-        status = str(job.get("status") or "")
-        if status not in {"queued", "running"}:
-            return _snapshot_job(job), False
-        job["cancelRequested"] = True
-        job["status"] = "cancelled"
-        job["stage"] = "Stopping audit"
-        job["progress"] = 100
-        job["error"] = "Audit stopped by user."
-        job["updatedAt"] = _now()
-
+    payload, changed = JOB_STORE.request_cancel(job_id)
+    if not payload:
+        return None, False
     with JOB_PROCESSES_LOCK:
         process = JOB_PROCESSES.get(job_id)
-    if process:
+    if changed and process:
         _terminate_process(process)
-
-    with JOBS_LOCK:
-        return _snapshot_job(JOBS[job_id]), True
+    return payload, changed
 
 
 def _validate_url(value: str) -> str:
@@ -910,7 +899,9 @@ def _save_screenshot_uploads(form: MultipartForm, job_id: str, labels: list[str]
         for index, item in enumerate(files, start=1):
             data, extension = _validated_image(item)
             target = upload_dir / f"{index:03d}-{uuid.uuid4().hex}{extension}"
-            target.write_bytes(data)
+            temporary = target.with_suffix(target.suffix + f".{uuid.uuid4().hex}.tmp")
+            temporary.write_bytes(data)
+            temporary.replace(target)
             saved_paths.append(target)
         return saved_paths
     except Exception:
@@ -1073,7 +1064,25 @@ def _update_job_progress_from_output(job_id: str, line: str) -> None:
         _set_job(job_id, stage=f"Opening pages ({current}/{total})", progress=progress)
 
 
-def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, env_overrides: dict[str, str] | None = None) -> int:
+def _stage_timeout(stage: str) -> float:
+    specific = re.sub(r"[^A-Z0-9]+", "_", stage.upper()).strip("_")
+    raw = os.getenv(f"UX_AUDIT_STAGE_TIMEOUT_{specific}_SEC") or os.getenv("UX_AUDIT_STAGE_TIMEOUT_SEC", "900")
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise RuntimeError("Audit stage timeout must be numeric.") from exc
+    return max(0.05, value)
+
+
+def _is_transient_stage_failure(job_id: str) -> bool:
+    job = JOB_STORE.get(job_id) or {}
+    recent = "\n".join(str(line).lower() for line in job.get("logs", [])[-40:])
+    transient_signals = ("connection reset", "net::err", "page crashed", "temporarily unavailable", "timeout")
+    deterministic_signals = ("invalid audit", "authentication", "authorization", "unsafe url", "malformed")
+    return any(signal in recent for signal in transient_signals) and not any(signal in recent for signal in deterministic_signals)
+
+
+def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, env_overrides: dict[str, str] | None = None, _attempt: int = 0) -> int:
     if _finish_if_cancelled(job_id):
         return CANCELLED_RETURN_CODE
 
@@ -1083,6 +1092,11 @@ def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, 
     env["PYTHONUNBUFFERED"] = "1"
     if env_overrides:
         env.update(env_overrides)
+    creation_kwargs: dict[str, Any] = {}
+    if os.name == "nt":
+        creation_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        creation_kwargs["start_new_session"] = True
     process = subprocess.Popen(
         command,
         cwd=str(ROOT_DIR),
@@ -1092,20 +1106,53 @@ def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, 
         stdin=subprocess.DEVNULL,
         text=True,
         bufsize=1,
+        **creation_kwargs,
     )
     with JOB_PROCESSES_LOCK:
         JOB_PROCESSES[job_id] = process
     try:
         assert process.stdout is not None
-        for line in process.stdout:
+        lines: queue.Queue[str | None] = queue.Queue()
+        def reader() -> None:
+            try:
+                for output_line in process.stdout or []:
+                    lines.put(output_line)
+            finally:
+                lines.put(None)
+        threading.Thread(target=reader, daemon=True).start()
+        stage_started = time.monotonic()
+        total_timeout = float(os.getenv("UX_AUDIT_TOTAL_TIMEOUT_SEC", "3600"))
+        job = JOB_STORE.get(job_id) or {}
+        started_at = float(job.get("startedAt") or _now())
+        total_elapsed = max(0.0, _now() - started_at)
+        while True:
             if _finish_if_cancelled(job_id):
                 _terminate_process(process)
                 return CANCELLED_RETURN_CODE
+            if time.monotonic() - stage_started > _stage_timeout(stage) or total_elapsed + (time.monotonic() - stage_started) > total_timeout:
+                _terminate_process(process)
+                _set_job(job_id, status="failed", stage=f"Timed out during {stage}", error=f"Audit timeout during stage: {stage}.")
+                JOB_STORE.event(job_id, "error", "timeout", f"Audit timeout during stage: {stage}.")
+                return -1
+            try:
+                line = lines.get(timeout=0.2)
+            except queue.Empty:
+                if process.poll() is not None:
+                    break
+                continue
+            if line is None:
+                break
             _append_log(job_id, line)
             _update_job_progress_from_output(job_id, line)
-        return_code = process.wait()
+        return_code = process.wait(timeout=5)
         if _finish_if_cancelled(job_id):
             return CANCELLED_RETURN_CODE
+        retry_limit = max(0, int(os.getenv("UX_AUDIT_TRANSIENT_STAGE_RETRIES", "1")))
+        if return_code and _attempt < retry_limit and _is_transient_stage_failure(job_id):
+            delay = min(2.0, 0.2 * (2**_attempt))
+            _append_log(job_id, f"Transient {stage} failure; retrying once after {delay:.1f}s.")
+            time.sleep(delay)
+            return _run_command(job_id, command, stage=stage, progress=progress, env_overrides=env_overrides, _attempt=_attempt + 1)
         return return_code
     finally:
         with JOB_PROCESSES_LOCK:
@@ -1114,10 +1161,11 @@ def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, 
 
 
 def _run_audit_job(job_id: str) -> None:
-    with JOBS_LOCK:
-        job = JOBS[job_id]
-        url = job["url"]
-        mode = job["mode"]
+    job = JOB_STORE.get(job_id)
+    if not job:
+        return
+    url = str(job["url"])
+    mode = str(job["mode"])
 
     _set_job(job_id, status="running", stage="Starting audit", progress=2)
     pipeline_command = [
@@ -1168,12 +1216,13 @@ def _run_audit_job(job_id: str) -> None:
 
 
 def _run_screenshot_audit_job(job_id: str) -> None:
-    with JOBS_LOCK:
-        job = JOBS[job_id]
-        screenshot_paths = [Path(path) for path in job.get("screenshotPaths", [])]
-        site_name = str(job.get("siteName") or "Screenshot Audit")
-        screenshot_labels = [str(label).strip() for label in job.get("screenshotLabels", []) if str(label).strip()]
-        surface_type = _normalize_surface_type(str(job.get("surfaceType") or "website"))
+    job = JOB_STORE.get(job_id)
+    if not job:
+        return
+    screenshot_paths = [Path(path) for path in job.get("screenshotPaths", [])]
+    site_name = str(job.get("siteName") or "Screenshot Audit")
+    screenshot_labels = [str(label).strip() for label in job.get("screenshotLabels", []) if str(label).strip()]
+    surface_type = _normalize_surface_type(str(job.get("surfaceType") or "website"))
 
     if _env_flag("SCREENSHOT_AUDITS_DISABLED", default=False):
         _set_job(
@@ -1255,9 +1304,10 @@ def _run_screenshot_audit_job(job_id: str) -> None:
 
 
 def _run_figma_audit_job(job_id: str) -> None:
-    with JOBS_LOCK:
-        job = JOBS[job_id]
-        figma_url = str(job.get("url") or "").strip()
+    job = JOB_STORE.get(job_id)
+    if not job:
+        return
+    figma_url = str(job.get("url") or "").strip()
 
     if _env_flag("FIGMA_AUDITS_DISABLED", default=False):
         _set_job(
@@ -1322,15 +1372,16 @@ def _run_figma_audit_job(job_id: str) -> None:
 
 
 def _run_mobile_audit_job(job_id: str) -> None:
-    with JOBS_LOCK:
-        job = JOBS[job_id]
-        app_label = str(job.get("appLabel") or "Android App Audit").strip() or "Android App Audit"
-        app_package = str(job.get("appPackage") or "").strip()
-        app_activity = str(job.get("appActivity") or "").strip()
-        appium_url = str(job.get("appiumUrl") or "http://127.0.0.1:4723").strip() or "http://127.0.0.1:4723"
-        device_name = str(job.get("deviceName") or "Android Emulator").strip() or "Android Emulator"
-        platform_version = str(job.get("platformVersion") or "").strip()
-        udid = str(job.get("udid") or "").strip()
+    job = JOB_STORE.get(job_id)
+    if not job:
+        return
+    app_label = str(job.get("appLabel") or "Android App Audit").strip() or "Android App Audit"
+    app_package = str(job.get("appPackage") or "").strip()
+    app_activity = str(job.get("appActivity") or "").strip()
+    appium_url = str(job.get("appiumUrl") or "http://127.0.0.1:4723").strip() or "http://127.0.0.1:4723"
+    device_name = str(job.get("deviceName") or "Android Emulator").strip() or "Android Emulator"
+    platform_version = str(job.get("platformVersion") or "").strip()
+    udid = str(job.get("udid") or "").strip()
 
     if _env_flag("MOBILE_AUDITS_DISABLED", default=False):
         _set_job(
@@ -1458,14 +1509,61 @@ def _run_mobile_audit_job(job_id: str) -> None:
     )
 
 
+def _execute_claimed_job(job_id: str) -> None:
+    job = JOB_STORE.get(job_id)
+    if not job:
+        return
+    input_type = str(job.get("inputType") or "")
+    audit_type = str(job.get("type") or "")
+    if input_type == "screenshot":
+        _run_screenshot_audit_job(job_id)
+    elif audit_type == "figma":
+        _run_figma_audit_job(job_id)
+    elif audit_type == "mobile":
+        _run_mobile_audit_job(job_id)
+    else:
+        _run_audit_job(job_id)
+
+
+def _start_job_worker() -> AuditWorker:
+    global JOB_WORKER
+    if JOB_WORKER is None:
+        JOB_WORKER = AuditWorker(JOB_STORE, _execute_claimed_job)
+        JOB_WORKER.start()
+    return JOB_WORKER
+
+
+def _queue_job(job: dict[str, Any], user: AuthenticatedUser, request_id: str = "") -> dict[str, Any]:
+    max_queued = _env_positive_int("UX_AUDIT_MAX_QUEUED", 100)
+    if JOB_STORE.queued_count() >= max_queued:
+        raise RuntimeError("Audit queue capacity is currently full. Please retry shortly.")
+    if not STORAGE_MANAGER.can_accept():
+        raise RuntimeError("Audit storage capacity is currently full. Please retry after retention cleanup.")
+    _assign_owner(job, user)
+    persisted = JOB_STORE.create(job, owner_id=user.id, owner_role=user.role, request_id=request_id)
+    # Legacy ownership metadata is only a transitional fallback for old generated reports.
+    _persist_ownership(persisted)
+    if JOB_WORKER is not None:
+        JOB_WORKER.notify()
+    return persisted
+
+
 class AuditRequestHandler(BaseHTTPRequestHandler):
     server_version = "UXUIAuditUI/1.0"
 
     def log_message(self, format: str, *args: Any) -> None:
-        # Deliberately omit paths and headers so bearer tokens or sensitive URLs cannot enter logs.
-        sys.stdout.write(f"{self.client_address[0]} - - [{self.log_date_time_string()}] request completed\n")
+        _structured_log(logging.INFO, "http_request", "request completed", request_id=self._request_id(), client=self.client_address[0])
+
+    def _request_id(self) -> str:
+        existing = getattr(self, "_ux_request_id", "")
+        if existing:
+            return existing
+        supplied = (self.headers.get("X-Request-ID") or "").strip()
+        self._ux_request_id = supplied if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", supplied) else uuid.uuid4().hex
+        return self._ux_request_id
 
     def end_headers(self) -> None:
+        self.send_header("X-Request-ID", self._request_id())
         origin = (self.headers.get("Origin") or "").strip()
         allowed_origins = _cors_allowed_origins()
         if origin and origin in allowed_origins:
@@ -1527,6 +1625,32 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _internal_error(self, event: str, exc: Exception) -> None:
+        LOG.exception("request_id=%s event=%s", self._request_id(), event)
+        self._send_json({"error": "Internal server error.", "requestId": self._request_id()}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _health_payload(self, ready: bool) -> tuple[dict[str, Any], HTTPStatus]:
+        checks: dict[str, str] = {"jobStore": "ok", "storage": "ok", "worker": "ok", "browser": "unknown"}
+        try:
+            JOB_STORE.metrics()
+        except Exception:
+            checks["jobStore"] = "error"
+        try:
+            AUDITS_DIR.mkdir(parents=True, exist_ok=True)
+            probe = AUDITS_DIR / f".health-{uuid.uuid4().hex}.tmp"
+            probe.write_text("ok", encoding="utf-8"); probe.unlink()
+        except Exception:
+            checks["storage"] = "error"
+        if ready and (JOB_WORKER is None or not JOB_WORKER.healthy()):
+            checks["worker"] = "error"
+        try:
+            from playwright.sync_api import executable_path
+            checks["browser"] = "ok" if Path(executable_path).exists() else "missing"
+        except Exception:
+            checks["browser"] = "unavailable"
+        status = HTTPStatus.OK if all(value == "ok" or (not ready and key in {"worker", "browser"}) for key, value in checks.items()) else HTTPStatus.SERVICE_UNAVAILABLE
+        return {"status": "ok" if status == HTTPStatus.OK else "degraded", "service": "ux-ui-auditor", "checks": checks}, status
+
     def _send_file(self, file_path: Path) -> None:
         if not file_path.exists() or not file_path.is_file():
             self.send_error(HTTPStatus.NOT_FOUND, "File not found")
@@ -1569,13 +1693,12 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path == "/health":
-            self._send_json(
-                {
-                    "status": "ok",
-                    "service": "ux-ui-auditor",
-                    "port": getattr(self.server, "server_port", None),
-                }
-            )
+            payload, status = self._health_payload(ready=False)
+            self._send_json(payload, status)
+            return
+        if parsed.path == "/ready":
+            payload, status = self._health_payload(ready=True)
+            self._send_json(payload, status)
             return
         if parsed.path == "/" or parsed.path.startswith("/static/") or (not parsed.path.startswith(("/api/", "/audits/", "/artifacts/"))):
             if parsed.path == "/":
@@ -1607,7 +1730,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                 load_audit_criteria_config()
                 self._send_json(current_audit_criteria_payload(source="custom" if AUDIT_CRITERIA_CONFIG_PATH.exists() else "defaults"))
             except Exception as exc:
-                self._send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._internal_error("criteria_read_failed", exc)
             return
         if parsed.path == "/api/capabilities":
             self._send_json({"detailedAuditAvailable": _detailed_workbook_template_available()})
@@ -1616,9 +1739,11 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             try:
                 self._send_json(_mobile_discovery_payload())
             except Exception as exc:
+                LOG.exception("request_id=%s event=mobile_discovery_failed", self._request_id())
                 self._send_json(
                     {
-                        "error": str(exc),
+                        "error": "Internal server error.",
+                        "requestId": self._request_id(),
                         "devices": [],
                         "selectedDevice": None,
                         "defaults": {
@@ -1691,11 +1816,14 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             if not job:
                 return
             try:
+                JOB_STORE.update(job_id, publicationStatus="running", event="publication_started")
                 url = _publish_job_report(job)
+                JOB_STORE.update(job_id, publicationStatus="completed", publicationUrl=url, event="publication_completed")
                 self._send_json({"url": url})
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             except Exception:
+                JOB_STORE.update(job_id, publicationStatus="failed", event="publication_failed")
                 self._send_json({"error": "Report publication failed."}, HTTPStatus.BAD_GATEWAY)
             return
 
@@ -1711,7 +1839,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             except Exception as exc:
-                self._send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._internal_error("criteria_write_failed", exc)
             return
 
         if parsed.path == "/api/criteria/reset":
@@ -1723,7 +1851,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
 
                 self._send_json(reset_audit_criteria_payload())
             except Exception as exc:
-                self._send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._internal_error("criteria_reset_failed", exc)
             return
 
         if parsed.path != "/api/audits":
@@ -1749,67 +1877,38 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                 surface_type = _normalize_surface_type(_field_value(form, "surfaceType", "website"))
                 screenshot_labels = _field_json_array(form, "screenshotLabels")
                 pending_job_id = uuid.uuid4().hex[:12]
-                with JOBS_LOCK:
-                    running = [job for job in JOBS.values() if job.get("status") in {"queued", "running"}]
-                    if running:
-                        self._send_json(
-                            {"error": "Another audit is already running. Wait for it to finish before starting a new one."},
-                            HTTPStatus.CONFLICT,
-                        )
-                        return
-                pending_job = {"id": pending_job_id, "createdAt": _now()}
-                _assign_owner(pending_job, user)
-                _persist_ownership(pending_job)
                 try:
                     screenshot_paths = _save_screenshot_uploads(form, pending_job_id, screenshot_labels)
                 except Exception:
-                    _ownership_path(pending_job_id).unlink(missing_ok=True)
                     raise
                 screenshot_labels = [
                     (screenshot_labels[index] if index < len(screenshot_labels) and screenshot_labels[index] else path.stem)
                     for index, path in enumerate(screenshot_paths)
                 ]
-                with JOBS_LOCK:
-                    job = _new_screenshot_job(site_name, screenshot_paths, screenshot_labels, surface_type=surface_type)
-                    job["id"] = pending_job_id
-                    _assign_owner(job, user)
-                    _persist_ownership(job)
-                    JOBS[job["id"]] = job
-                worker = threading.Thread(target=_run_screenshot_audit_job, args=(job["id"],), daemon=True)
-                worker.start()
+                job = _new_screenshot_job(site_name, screenshot_paths, screenshot_labels, surface_type=surface_type)
+                job["id"] = pending_job_id
+                try:
+                    job = _queue_job(job, user, self._request_id())
+                except Exception:
+                    shutil.rmtree(SCREENSHOT_AUDIT_DIR / pending_job_id, ignore_errors=True)
+                    raise
                 self._send_json(_snapshot_for_request(job, self), HTTPStatus.ACCEPTED)
                 return
 
             data = self._read_json_body()
             audit_type = str(data.get("auditType") or "website")
             mode = str(data.get("mode") or "gtm").lower()
-            with JOBS_LOCK:
-                running = [job for job in JOBS.values() if job.get("status") in {"queued", "running"}]
-                if running:
-                    self._send_json(
-                        {"error": "Another audit is already running. Wait for it to finish before starting a new one."},
-                        HTTPStatus.CONFLICT,
-                    )
-                    return
-                if audit_type == "website":
+            if audit_type == "website":
                     if mode not in {"detailed", "gtm"}:
                         raise ValueError("Audit mode must be either detailed or gtm.")
                     if mode == "detailed" and not _detailed_workbook_template_available():
                         raise ValueError("Detailed audits are unavailable because no configured workbook template exists.")
                     url = _validate_url(str(data.get("url") or ""))
                     job = _new_job(url, mode)
-                    _assign_owner(job, user)
-                    _persist_ownership(job)
-                    JOBS[job["id"]] = job
-                    worker = threading.Thread(target=_run_audit_job, args=(job["id"],), daemon=True)
-                elif audit_type == "figma":
+            elif audit_type == "figma":
                     figma_url = _validate_figma_url(str(data.get("figmaUrl") or data.get("url") or ""))
                     job = _new_figma_job(figma_url)
-                    _assign_owner(job, user)
-                    _persist_ownership(job)
-                    JOBS[job["id"]] = job
-                    worker = threading.Thread(target=_run_figma_audit_job, args=(job["id"],), daemon=True)
-                elif audit_type == "mobile":
+            elif audit_type == "mobile":
                     app_label = str(data.get("appLabel") or "Android App Audit").strip() or "Android App Audit"
                     app_package = str(data.get("appPackage") or "").strip()
                     app_activity = str(data.get("appActivity") or "").strip()
@@ -1846,18 +1945,16 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                         platform_version=platform_version,
                         udid=udid,
                     )
-                    _assign_owner(job, user)
-                    _persist_ownership(job)
-                    JOBS[job["id"]] = job
-                    worker = threading.Thread(target=_run_mobile_audit_job, args=(job["id"],), daemon=True)
-                else:
-                    raise ValueError("Use multipart upload for screenshot audits. Supported JSON audit types are website, mobile, and figma.")
-            worker.start()
+            else:
+                raise ValueError("Use multipart upload for screenshot audits. Supported JSON audit types are website, mobile, and figma.")
+            job = _queue_job(job, user, self._request_id())
             self._send_json(_snapshot_for_request(job, self), HTTPStatus.ACCEPTED)
         except ValueError as exc:
             self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
-        except Exception:
-            self._send_json({"error": "Request could not be processed."}, HTTPStatus.INTERNAL_SERVER_ERROR)
+        except RuntimeError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.SERVICE_UNAVAILABLE)
+        except Exception as exc:
+            self._internal_error("audit_creation_failed", exc)
 
 
 def main() -> None:
@@ -1867,6 +1964,9 @@ def main() -> None:
     args = parser.parse_args()
 
     validate_auth_configuration(args.host)
+    _validate_job_backend_configuration()
+    logging.basicConfig(level=os.getenv("UX_LOG_LEVEL", "INFO").upper(), format="%(message)s")
+    _start_job_worker()
 
     server = ThreadingHTTPServer((args.host, args.port), AuditRequestHandler)
     print(f"Audit launcher UI: http://{args.host}:{args.port}")
@@ -1876,6 +1976,9 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nStopping audit launcher UI.")
     finally:
+        if JOB_WORKER is not None:
+            JOB_WORKER.stop()
+        JOB_STORE.close()
         server.server_close()
 
 

@@ -30,6 +30,7 @@ chatgpt_handoff/
 shared/output/
 shared/generated/
 shared/audits/
+shared/state/
 output/
 artifacts/
 audit-artifacts/

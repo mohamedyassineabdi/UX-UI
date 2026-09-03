@@ -6,6 +6,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from src.ui import server
+from src.jobs import AuditStorageManager, JobStore
 
 
 class PortalAuthHandler(BaseHTTPRequestHandler):
@@ -49,9 +50,10 @@ def test_real_auth_me_contract_and_authenticated_api_smoke(monkeypatch, tmp_path
     monkeypatch.setattr(server, "OWNERSHIP_DIR", tmp_path / "ownership")
     monkeypatch.setattr(server, "_validate_url", lambda value: value)
     monkeypatch.setattr(server, "_run_audit_job", lambda _job_id: None)
+    store = JobStore(tmp_path / "state" / "jobs.sqlite3")
+    monkeypatch.setattr(server, "JOB_STORE", store)
+    monkeypatch.setattr(server, "STORAGE_MANAGER", AuditStorageManager(store, tmp_path / "audits", retention_days=0, max_bytes=0))
     server.RATE_LIMITER.clear()
-    with server.JOBS_LOCK:
-        server.JOBS.clear()
 
     api_server = ThreadingHTTPServer(("127.0.0.1", 0), server.AuditRequestHandler)
     api_thread = threading.Thread(target=api_server.serve_forever, daemon=True)
@@ -69,5 +71,4 @@ def test_real_auth_me_contract_and_authenticated_api_smoke(monkeypatch, tmp_path
         auth_server.server_close()
         api_thread.join(timeout=3)
         auth_thread.join(timeout=3)
-        with server.JOBS_LOCK:
-            server.JOBS.clear()
+        store.close()

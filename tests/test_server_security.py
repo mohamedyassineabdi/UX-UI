@@ -8,6 +8,7 @@ import pytest
 
 from src.security.auth import AuthenticationError
 from src.audit.workspace import AuditWorkspace
+from src.jobs import AuditStorageManager, JobStore
 from src.ui import server
 
 
@@ -31,11 +32,13 @@ def api_server(monkeypatch, tmp_path, user_a, user_b, administrator):
     monkeypatch.setattr(server, "DETAILED_VERCEL_DIR", generated / "vercel-audit-report")
     monkeypatch.setattr(server, "FIGMA_AUDIT_DIR", generated / "figma-audits")
     monkeypatch.setattr(server, "MOBILE_AUDIT_DIR", generated / "mobile-audits")
+    monkeypatch.setattr(server, "AUDITS_DIR", tmp_path / "audits")
+    store = JobStore(tmp_path / "state" / "jobs.sqlite3")
+    monkeypatch.setattr(server, "JOB_STORE", store)
+    monkeypatch.setattr(server, "STORAGE_MANAGER", AuditStorageManager(store, server.AUDITS_DIR, retention_days=0, max_bytes=0))
     monkeypatch.setattr(server, "_run_audit_job", lambda _job_id: None)
     monkeypatch.setattr(server, "_validate_url", lambda value: value)
     server.RATE_LIMITER.clear()
-    with server.JOBS_LOCK:
-        server.JOBS.clear()
     instance = server.ThreadingHTTPServer(("127.0.0.1", 0), server.AuditRequestHandler)
     thread = threading.Thread(target=instance.serve_forever, daemon=True)
     thread.start()
@@ -43,8 +46,7 @@ def api_server(monkeypatch, tmp_path, user_a, user_b, administrator):
     instance.shutdown()
     instance.server_close()
     thread.join(timeout=3)
-    with server.JOBS_LOCK:
-        server.JOBS.clear()
+    store.close()
 
 
 def request(instance, method, path, *, token=None, body=None, headers=None):
@@ -156,14 +158,14 @@ def test_website_workspace_report_resolves_by_job_id_without_sibling_search(api_
     assert request(api_server, "GET", f"/audits/{audit['id']}/", token="token-b")[0] == 404
 
 
-def test_persisted_ownership_protects_report_after_job_memory_is_gone(api_server):
+def test_persisted_ownership_protects_report_after_server_restart(api_server, monkeypatch, tmp_path):
     audit = create_audit(api_server)
     job_id = audit["id"]
     report = server.GTM_VERCEL_DIR / "audits" / job_id / "index.html"
     report.parent.mkdir(parents=True)
     report.write_text("safe report", encoding="utf-8")
-    with server.JOBS_LOCK:
-        server.JOBS.clear()
+    restarted = JobStore(tmp_path / "state" / "jobs.sqlite3")
+    monkeypatch.setattr(server, "JOB_STORE", restarted)
     assert request(api_server, "GET", f"/audits/{job_id}/", token="token-a")[0] == 200
     assert request(api_server, "GET", f"/audits/{job_id}/", token="token-b")[0] == 404
 
@@ -181,8 +183,8 @@ def test_static_report_symlink_component_is_denied(api_server, monkeypatch):
 
 def test_publish_requires_owner(api_server, monkeypatch):
     audit = create_audit(api_server)
-    with server.JOBS_LOCK:
-        server.JOBS[audit["id"]]["status"] = "completed"
+    server.JOB_STORE.update(audit["id"], status="running")
+    server.JOB_STORE.update(audit["id"], status="completed")
     monkeypatch.setattr(server, "_publish_job_report", lambda _job: "https://example.vercel.app/audits/id/")
     path = f"/api/audits/{audit['id']}/publish"
     assert request(api_server, "POST", path, token="token-b")[0] == 404

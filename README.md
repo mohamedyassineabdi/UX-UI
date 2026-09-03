@@ -196,6 +196,20 @@ shared/audits/<job-id>/      Isolated website-audit workspace and generated evid
 shared/generated/            Other local generated reports and audit artifacts
 ```
 
+## Persistent jobs and recovery
+
+The UI accepts an audit as a durable queued job, then a bounded local worker claims it, renews a lease while it runs, and writes results to the job workspace. The default single-instance backend is SQLite at `shared/state/jobs.sqlite3` (or `UX_JOB_DATABASE_URL=sqlite:///absolute/path/jobs.sqlite3`). Runtime state is ignored by Git and Docker.
+
+```text
+HTTP request -> durable queued job -> worker claim + lease -> isolated audit workspace -> terminal result
+```
+
+Useful controls are `UX_AUDIT_WORKER_CONCURRENCY` (default `1`), `UX_AUDIT_MAX_QUEUED` (default `100`), `UX_AUDIT_WORKER_LEASE_SEC` (default `45`), `UX_AUDIT_TOTAL_TIMEOUT_SEC` (default `3600`), `UX_AUDIT_STAGE_TIMEOUT_SEC` (default `900`), `UX_AUDIT_TRANSIENT_STAGE_RETRIES` (default `1`), `UX_PUBLICATION_TIMEOUT_SEC` (default `600`), `UX_AUDIT_MAX_PAGES` (default `50`), `UX_AUDIT_RETENTION_DAYS` (default `30`), and `UX_AUDIT_STORAGE_MAX_BYTES` (default 5 GiB). Only classified connection/browser timeout failures retry, and retries are bounded. Expired worker leases are marked `interrupted`, never automatically rerun. Queued cancellation is immediate; running cancellation terminates the application-owned process tree.
+
+`/health` is a cheap liveness/storage/store check; `/ready` additionally requires a running worker and a detectable Playwright runtime. Both return JSON. Request IDs are returned in `X-Request-ID` and attached to job creation events.
+
+`UX_DEPLOYMENT_MODE=distributed` intentionally fails startup in this release: a local SQLite file cannot coordinate multiple containers. A production multi-instance deployment needs a shared PostgreSQL-capable job backend plus its external database provisioning. Likewise, custom criteria (`AUDIT_CRITERIA_CONFIG_PATH`) and audit workspaces need mounted durable storage on ephemeral platforms if they must survive redeploys.
+
 ## Git / Push Hygiene
 
 The `.gitignore` excludes local secrets, virtual environments, caches, Playwright artifacts, generated reports, generated screenshots, Figma audit outputs, Vercel local state, and imported archive files.

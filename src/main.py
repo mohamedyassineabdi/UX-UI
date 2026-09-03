@@ -278,6 +278,12 @@ def parse_input_to_pages(raw_input: Any, config: Dict[str, Any]) -> List[Dict[st
     raise ValueError("Input JSON must be either an array of pages or the partner navigation object.")
 
 
+def apply_page_limit(pages: List[Dict[str, Any]], max_pages: int) -> tuple[List[Dict[str, Any]], int]:
+    if max_pages <= 0:
+        raise ValueError("Maximum audit page count must be positive.")
+    return pages[:max_pages], max(0, len(pages) - max_pages)
+
+
 def summarize_run(page_results: List[Dict[str, Any]]) -> Dict[str, Any]:
     aggregate = {
         "totalClickablesDetected": 0,
@@ -610,6 +616,16 @@ async def async_main(job_id: str):
     deduped = deduplicate_pages(pages_parsed, config["urlNormalization"])
     unique_pages = deduped["uniquePages"]
     duplicates = deduped["duplicates"]
+    try:
+        max_pages = int(os.getenv("UX_AUDIT_MAX_PAGES", "50"))
+    except ValueError as exc:
+        raise RuntimeError("UX_AUDIT_MAX_PAGES must be a positive integer.") from exc
+    try:
+        unique_pages, truncated_page_count = apply_page_limit(unique_pages, max_pages)
+    except ValueError as exc:
+        raise RuntimeError("UX_AUDIT_MAX_PAGES must be a positive integer.") from exc
+    if truncated_page_count:
+        print(f"Page candidate limit applied: skipped {truncated_page_count} page(s) before audit execution.")
 
     print(f"Total pages extracted from input: {len(pages_parsed)}")
     print(f"Unique pages to visit: {len(unique_pages)}")
@@ -720,6 +736,8 @@ async def async_main(job_id: str):
         "pageConcurrency": config["execution"]["pageConcurrency"],
         "totalPagesExtractedFromInput": len(pages_parsed),
         "uniquePagesVisited": len(unique_pages),
+        "candidatePagesTruncated": truncated_page_count,
+        "pageLimit": max_pages,
         "duplicatePagesSkipped": len(duplicates),
         "pagesSucceeded": len([result for result in page_results if result["status"] == "success"]),
         "pagesFailed": len([result for result in page_results if result["status"] == "failed"]),

@@ -229,16 +229,21 @@ def deploy_to_vercel(static_dir: Path, *, production: bool = True, public_path: 
     vercel_scope = _env("VERCEL_SCOPE")
     if vercel_scope:
         command.extend(["--scope", vercel_scope])
-    completed = subprocess.run(
-        command,
-        cwd=str(static_dir),
-        env=_vercel_subprocess_env(),
-        check=False,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-    )
+    try:
+        timeout = float(os.getenv("UX_PUBLICATION_TIMEOUT_SEC", "600"))
+        completed = subprocess.run(
+            command,
+            cwd=str(static_dir),
+            env=_vercel_subprocess_env(),
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            timeout=max(1, timeout),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Vercel publication timed out; the local audit report remains available.") from exc
     output = completed.stdout or ""
     print(output, end="" if output.endswith("\n") else "\n")
     if completed.returncode != 0:

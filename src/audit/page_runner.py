@@ -336,6 +336,9 @@ async def run_page_audit(*, context, page_info, page_index, config):
         "performance": None,
         "keyboardAccessibility": None,
         "runtimeMotion": None,
+        "mainDocumentStatus": None,
+        "collectionStatus": "pending",
+        "failureReason": "",
         "networkLogPath": None,
         "pageMetadataPath": None,
         "domSnapshotPath": None,
@@ -356,11 +359,17 @@ async def run_page_audit(*, context, page_info, page_index, config):
         collect_network_log(page, network_log)
         await install_performance_observers(page)
 
-        await page.goto(
+        main_response = await page.goto(
             page_info["url"],
             wait_until=config["navigation"]["waitUntil"],
             timeout=config["navigation"]["timeoutMs"],
         )
+        status = int(main_response.status) if main_response is not None else None
+        result["mainDocumentStatus"] = status
+        result["collectionStatus"] = "collected" if status is None or 200 <= status < 400 else "failed"
+        if status is not None and status >= 400:
+            result["failureReason"] = f"Main document returned HTTP {status}."
+            raise RuntimeError(result["failureReason"])
 
         if config["navigation"]["postLoadDelayMs"] > 0:
             await page.wait_for_timeout(config["navigation"]["postLoadDelayMs"])
@@ -386,6 +395,7 @@ async def run_page_audit(*, context, page_info, page_index, config):
         await scroll_to_url_fragment(page, page_info["url"])
 
         result["pageMetadata"] = await extract_basic_page_info(page, page_info["url"])
+        result["pageMetadata"].update({"httpStatus": status, "collectionStatus": result["collectionStatus"], "failureReason": result.get("failureReason", "")})
         result["finalUrl"] = result["pageMetadata"]["finalUrl"] or result["finalUrl"]
         result["performance"] = await collect_performance_snapshot(page)
         result["keyboardAccessibility"] = await collect_keyboard_accessibility_snapshot(
