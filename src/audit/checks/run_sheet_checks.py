@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from src.audit.workspace import atomic_write_json
 from .common import AuditContext, clean_text
 from .content_checks import run as run_content_checks
 from .feedback_checks import run as run_feedback_checks
@@ -15,8 +16,6 @@ from .navigation_checks import run as run_navigation_checks
 from .presentation_checks import run_presentation_checks
 from .visual_hierarchy_checks import run_visual_hierarchy_checks
 
-
-RESULTS_DIR = Path(__file__).resolve().parents[3] / "shared" / "output" / "results"
 
 TARGET_SHEETS = [
     "Content",
@@ -104,9 +103,7 @@ def load_json(path: Path) -> Dict[str, Any]:
 
 
 def save_json(path: Path, data: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    atomic_write_json(path, data)
 
 
 def normalize_status(raw_status: Any) -> str:
@@ -295,13 +292,6 @@ def summarize_sheet(results: List[Dict[str, Any]]) -> Dict[str, int]:
         counts[status] = counts.get(status, 0) + 1
         counts["total"] += 1
     return counts
-
-
-def load_latest_results(results_dir: Path) -> Optional[Dict[str, Any]]:
-    candidates = sorted(results_dir.glob("audit-results_*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
-    if not candidates:
-        return None
-    return load_json(candidates[0])
 
 
 def partner_status_to_sheet_status(raw_status: Any) -> str:
@@ -621,11 +611,8 @@ def main() -> None:
             raise FileNotFoundError(f"Rendered JSON not found: {rendered_path}")
 
         results_path = Path(args.results) if args.results else None
-        if results_path is None:
-            latest_results = load_latest_results(RESULTS_DIR)
-            if latest_results is not None:
-                latest_candidates = sorted(RESULTS_DIR.glob("audit-results_*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
-                results_path = latest_candidates[0] if latest_candidates else None
+        if results_path is not None and not results_path.exists():
+            raise FileNotFoundError(f"Audit results JSON not found: {results_path}")
 
         checks_data = generate_checks_schema(cleaned_path, rendered_path, results_path=results_path)
     elif args.checks:

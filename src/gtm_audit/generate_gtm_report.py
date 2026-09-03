@@ -15,9 +15,6 @@ from .evidence import build_gtm_spotlight
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-GENERATED_DIR = ROOT_DIR / "shared" / "generated"
-DEFAULT_GTM_AUDIT = GENERATED_DIR / "gtm_audit.json"
-DEFAULT_OUTPUT_DIR = GENERATED_DIR / "gtm-report"
 
 AXIS_LABELS = {
     "task_execution": "Performance & Task Execution",
@@ -1216,8 +1213,8 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
 
     priorities_data = list((summary.get("topPriorities") or [])[:5])
     artifacts = payload.get("artifacts") or {}
-    cleaned_path = to_path(clean_text(artifacts.get("cleanedPath")), ROOT_DIR / "shared" / "generated" / "html_cleaned.json")
-    rendered_path = to_path(clean_text(artifacts.get("renderedPath")), ROOT_DIR / "shared" / "generated" / "rendered_ui_extraction.json")
+    cleaned_path = to_path(clean_text(artifacts.get("cleanedPath")), ROOT_DIR / "missing-cleaned.json")
+    rendered_path = to_path(clean_text(artifacts.get("renderedPath")), ROOT_DIR / "missing-rendered-ui.json")
     for index, item in enumerate(priorities_data, start=1):
         item["spotlightImage"] = build_screenshot_spotlight(item, output_dir, index, is_mobile_visual=is_mobile_visual) if is_screenshot_audit else build_gtm_spotlight(
             item=item,
@@ -3086,12 +3083,12 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate the GTM audit landing page.")
-    parser.add_argument("--input", default=str(DEFAULT_GTM_AUDIT))
-    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
 
-    input_path = to_path(args.input, DEFAULT_GTM_AUDIT)
-    output_dir = to_path(args.output_dir, DEFAULT_OUTPUT_DIR)
+    input_path = to_path(args.input, ROOT_DIR)
+    output_dir = to_path(args.output_dir, ROOT_DIR)
     if not input_path.exists():
         raise FileNotFoundError(f"GTM audit JSON not found: {input_path}")
 

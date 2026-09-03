@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import argparse
+import copy
 import os
 import pathlib
 import sys
@@ -18,6 +20,7 @@ from src.audit.page_runner import run_page_audit
 from src.audit.page_visit_helpers import dismiss_cookie_banners, extract_basic_page_info, wait_for_page_ready
 from src.audit.html_postprecess import clean_html_output
 from src.audit.rendered_css_extractor import build_rendered_ui_output
+from src.audit.workspace import AuditWorkspace, atomic_write_json
 from src.config.audit_config import AUDIT_CONFIG
 from src.security.network_policy import (
     chromium_host_resolver_rules,
@@ -25,8 +28,6 @@ from src.security.network_policy import (
     validate_public_url,
 )
 from src.utils.file_utils import (
-    build_timestamp_for_file_name,
-    clear_dir,
     ensure_dir,
     ensure_output_dirs,
     join_path,
@@ -457,33 +458,24 @@ async def collect_responsive_mobile_profiles(browser, pages: List[Dict[str, Any]
     responsive_config = (config.get("presentationChecks") or {}).get("responsiveDesktopMobile") or {}
     if not responsive_config.get("enabled", True):
         return []
-    context = await browser.new_context(
-        viewport={
-            "width": int(responsive_config.get("mobileWidth") or 390),
-            "height": int(responsive_config.get("mobileHeight") or 844),
-        },
-        ignore_https_errors=config["browser"].get("ignoreHttpsErrors", False),
-        is_mobile=True,
-        service_workers="block",
-    )
-    await install_playwright_network_guard(context, validated_urls)
-    try:
-        async def worker(page_info, index):
-            print(f"[RESP {index + 1}/{len(pages)}] {page_info['name']} -> mobile viewport")
+    async def worker(page_info, index):
+        print(f"[RESP {index + 1}/{len(pages)}] {page_info['name']} -> mobile viewport")
+        context = await new_isolated_context(browser, config, validated_urls, mobile=True)
+        try:
             return await run_responsive_mobile_probe(
                 context=context,
                 page_info=page_info,
                 page_index=index,
                 config=config,
             )
+        finally:
+            await context.close()
 
-        return await run_with_concurrency(
-            pages,
-            worker,
-            max(1, min(2, config["execution"]["pageConcurrency"])),
-        )
-    finally:
-        await context.close()
+    return await run_with_concurrency(
+        pages,
+        worker,
+        max(1, min(2, config["execution"]["pageConcurrency"])),
+    )
 
 
 def build_html_output(page_results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -547,26 +539,6 @@ def get_browser_launcher(playwright, browser_type: str):
     return playwright.chromium
 
 
-def clear_website_output_dirs(pages: List[Dict[str, Any]], config: Dict[str, Any]) -> None:
-    cleanup_config = config.get("outputCleanup", {})
-    if not cleanup_config.get("clearWebsiteScreenshotsBeforeRun", False):
-        return
-
-    screenshot_root = config["paths"]["screenshotDir"]
-    website_folder_names = sorted(
-        {
-            build_website_folder_name(clean_label(page.get("siteUrl")) or page["url"])
-            for page in pages
-            if clean_label(page.get("siteUrl")) or clean_label(page.get("url"))
-        }
-    )
-
-    for folder_name in website_folder_names:
-        folder_path = join_path(screenshot_root, folder_name)
-        clear_dir(folder_path)
-        print(f"Cleared screenshot output: {folder_path}")
-
-
 async def launch_browser(playwright, config: Dict[str, Any], validated_urls):
     browser_launcher = get_browser_launcher(playwright, config["browser"]["browserType"])
     launch_options: Dict[str, Any] = {
@@ -590,17 +562,52 @@ async def launch_browser(playwright, config: Dict[str, Any], validated_urls):
         return await browser_launcher.launch(**fallback_options)
 
 
-async def async_main():
+async def new_isolated_context(browser, config: Dict[str, Any], validated_urls, *, mobile: bool = False):
+    viewport = config["browser"]["viewport"]
+    if mobile:
+        responsive = (config.get("presentationChecks") or {}).get("responsiveDesktopMobile") or {}
+        viewport = {
+            "width": int(responsive.get("mobileWidth") or 390),
+            "height": int(responsive.get("mobileHeight") or 844),
+        }
+    context = await browser.new_context(
+        viewport=viewport,
+        ignore_https_errors=config["browser"].get("ignoreHttpsErrors", False),
+        is_mobile=mobile,
+        service_workers="block",
+    )
+    await install_playwright_network_guard(context, validated_urls)
+    return context
+
+
+def workspace_config(workspace: AuditWorkspace) -> Dict[str, Any]:
+    config = copy.deepcopy(AUDIT_CONFIG)
+    config["paths"] = {
+        **config["paths"],
+        "inputFile": str(workspace.website_menu),
+        "screenshotDir": str(workspace.page_screenshots),
+        "interactionScreenshotDir": str(workspace.interaction_screenshots),
+        "resultsDir": str(workspace.extraction_dir),
+    }
+    # A new job workspace is empty. Never clean a shared historical evidence tree.
+    config["outputCleanup"] = {**config.get("outputCleanup", {}), "clearWebsiteScreenshotsBeforeRun": False}
+    return config
+
+
+async def async_main(job_id: str):
+    workspace = AuditWorkspace.for_repository(job_id)
+    workspace.prepare(mode="website")
+    config = workspace_config(workspace)
     started_at = datetime.now()
 
-    print("Starting audit...")
-    print(f"Reading input file: {AUDIT_CONFIG['paths']['inputFile']}")
+    print(f"Starting audit for job {workspace.job_id}...")
+    print(f"Reading input file: {config['paths']['inputFile']}")
 
-    ensure_output_dirs(AUDIT_CONFIG["paths"])
+    ensure_output_dirs(config["paths"])
 
-    raw_input = read_json_file(AUDIT_CONFIG["paths"]["inputFile"])
-    pages_parsed = parse_input_to_pages(raw_input, AUDIT_CONFIG)
-    deduped = deduplicate_pages(pages_parsed, AUDIT_CONFIG["urlNormalization"])
+    raw_input = read_json_file(config["paths"]["inputFile"])
+    pages_parsed = parse_input_to_pages(raw_input, config)
+    deduped = deduplicate_pages(pages_parsed, config["urlNormalization"])
     unique_pages = deduped["uniquePages"]
     duplicates = deduped["duplicates"]
 
@@ -614,7 +621,7 @@ async def async_main():
             "The crawler likely failed or did not return usable navigation links."
         )
 
-    if AUDIT_CONFIG["browser"].get("browserType") != "chromium":
+    if config["browser"].get("browserType") != "chromium":
         raise RuntimeError("Phase 0 network isolation supports Chromium only.")
 
     validated_urls = []
@@ -623,45 +630,36 @@ async def async_main():
         page["url"] = checked.url
         validated_urls.append(checked)
 
-    insecure_tls = bool(AUDIT_CONFIG["browser"].get("ignoreHttpsErrors", False))
+    insecure_tls = bool(config["browser"].get("ignoreHttpsErrors", False))
     environment = (os.getenv("APP_ENV") or os.getenv("UX_ENVIRONMENT") or "development").lower()
     if insecure_tls and environment in {"production", "prod", "staging"}:
         raise RuntimeError("AUDIT_BROWSER_IGNORE_HTTPS_ERRORS is forbidden outside local development.")
     if insecure_tls:
         warnings.warn("INSECURE DEVELOPMENT TLS OVERRIDE IS ACTIVE.", RuntimeWarning, stacklevel=1)
 
-    clear_website_output_dirs(unique_pages, AUDIT_CONFIG)
-
     print(
         "Browser mode: "
-        f"{'visible' if not AUDIT_CONFIG['browser']['headless'] else 'headless'} "
-        f"{AUDIT_CONFIG['browser'].get('channel') or AUDIT_CONFIG['browser']['browserType']}"
+        f"{'visible' if not config['browser']['headless'] else 'headless'} "
+        f"{config['browser'].get('channel') or config['browser']['browserType']}"
     )
-    print(f"Page concurrency: {AUDIT_CONFIG['execution']['pageConcurrency']}")
+    print(f"Page concurrency: {config['execution']['pageConcurrency']}")
 
     async with async_playwright() as playwright:
         browser = None
-        context = None
-
-        browser = await launch_browser(playwright, AUDIT_CONFIG, validated_urls)
-        context = await browser.new_context(
-            viewport=AUDIT_CONFIG["browser"]["viewport"],
-            ignore_https_errors=AUDIT_CONFIG["browser"].get("ignoreHttpsErrors", False),
-            service_workers="block",
-        )
-        await install_playwright_network_guard(context, validated_urls)
+        browser = await launch_browser(playwright, config, validated_urls)
 
         try:
             progress = {"completed": 0}
 
             async def worker(page_info, index):
                 print(f"[START {index + 1}/{len(unique_pages)}] {page_info['name']} -> {page_info['url']}")
+                context = await new_isolated_context(browser, config, validated_urls)
                 try:
                     result = await run_page_audit(
                         context=context,
                         page_info=page_info,
                         page_index=index,
-                        config=AUDIT_CONFIG,
+                        config=config,
                     )
 
                     if result["status"] == "success":
@@ -683,15 +681,16 @@ async def async_main():
 
                     return result
                 finally:
+                    await context.close()
                     progress["completed"] += 1
                     print(f"[DONE  {progress['completed']}/{len(unique_pages)}] {page_info['url']}")
 
             page_results = await run_with_concurrency(
                 unique_pages,
                 worker,
-                AUDIT_CONFIG["execution"]["pageConcurrency"],
+                config["execution"]["pageConcurrency"],
             )
-            responsive_profiles = await collect_responsive_mobile_profiles(browser, unique_pages, AUDIT_CONFIG, validated_urls)
+            responsive_profiles = await collect_responsive_mobile_profiles(browser, unique_pages, config, validated_urls)
             for result, mobile_profile in zip(page_results, responsive_profiles):
                 if isinstance(result, dict):
                     desktop_profile = {
@@ -703,24 +702,22 @@ async def async_main():
                     }
                     result["responsiveProfiles"] = [desktop_profile, mobile_profile]
         finally:
-            if context:
-                await context.close()
             if browser:
                 await browser.close()
 
     finished_at = datetime.now()
-    timestamp = build_timestamp_for_file_name(finished_at)
     run_summary = summarize_run(page_results)
 
     summary = {
         "runStartedAt": started_at.isoformat(),
         "runFinishedAt": finished_at.isoformat(),
-        "inputFile": AUDIT_CONFIG["paths"]["inputFile"],
-        "browserType": AUDIT_CONFIG["browser"]["browserType"],
-        "browserChannel": AUDIT_CONFIG["browser"].get("channel"),
-        "headless": AUDIT_CONFIG["browser"]["headless"],
-        "slowMoMs": AUDIT_CONFIG["browser"].get("slowMoMs", 0),
-        "pageConcurrency": AUDIT_CONFIG["execution"]["pageConcurrency"],
+        "jobId": workspace.job_id,
+        "inputFile": config["paths"]["inputFile"],
+        "browserType": config["browser"]["browserType"],
+        "browserChannel": config["browser"].get("channel"),
+        "headless": config["browser"]["headless"],
+        "slowMoMs": config["browser"].get("slowMoMs", 0),
+        "pageConcurrency": config["execution"]["pageConcurrency"],
         "totalPagesExtractedFromInput": len(pages_parsed),
         "uniquePagesVisited": len(unique_pages),
         "duplicatePagesSkipped": len(duplicates),
@@ -751,23 +748,20 @@ async def async_main():
         "pages": page_results,
     }
 
-    results_file_path = join_path(
-        AUDIT_CONFIG["paths"]["resultsDir"],
-        f"audit-results_{timestamp}.json",
-    )
-    write_json_file(results_file_path, output)
+    results_file_path = workspace.audit_results
+    atomic_write_json(results_file_path, output)
 
     html_output = build_html_output(page_results)
-    html_file_path = join_path("shared", "generated", "html_extraction.json")
-    write_json_file(html_file_path, html_output)
+    html_file_path = workspace.html_extraction
+    atomic_write_json(html_file_path, html_output)
 
     html_cleaned_output = clean_html_output(html_output)
-    html_cleaned_file_path = join_path("shared", "generated", "html_cleaned.json")
-    write_json_file(html_cleaned_file_path, html_cleaned_output)
+    html_cleaned_file_path = workspace.html_cleaned
+    atomic_write_json(html_cleaned_file_path, html_cleaned_output)
 
     rendered_ui_output = build_rendered_ui_output(page_results)
-    rendered_ui_file_path = join_path("shared", "generated", "rendered_ui_extraction.json")
-    write_json_file(rendered_ui_file_path, rendered_ui_output)
+    rendered_ui_file_path = workspace.rendered_ui
+    atomic_write_json(rendered_ui_file_path, rendered_ui_output)
 
     print(f"Results written to: {results_file_path}")
     print(f"HTML extraction written to: {html_file_path}")
@@ -777,8 +771,11 @@ async def async_main():
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Run the website extraction stage inside an audit workspace.")
+    parser.add_argument("--job-id", required=True)
+    args = parser.parse_args()
     try:
-        asyncio.run(async_main())
+        asyncio.run(async_main(args.job_id))
     except Exception as error:
         print("Fatal error while running audit:", file=sys.stderr)
         print(error, file=sys.stderr)

@@ -25,6 +25,7 @@ from urllib.parse import quote, unquote, urlparse
 from dotenv import load_dotenv
 from PIL import Image, UnidentifiedImageError
 
+from src.audit.workspace import AuditWorkspace
 from src.security.auth import AuthenticatedUser, AuthenticationError, authenticate_bearer, validate_auth_configuration
 from src.security.network_policy import UnsafeURLError, validate_public_url
 from src.security.rate_limit import SlidingWindowRateLimiter
@@ -33,6 +34,7 @@ from src.security.rate_limit import SlidingWindowRateLimiter
 ROOT_DIR = Path(__file__).resolve().parents[2]
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 GENERATED_DIR = ROOT_DIR / "shared" / "generated"
+AUDITS_DIR = ROOT_DIR / "shared" / "audits"
 DETAILED_REPORT_DIR = GENERATED_DIR / "audit-report"
 GTM_REPORT_DIR = GENERATED_DIR / "gtm-report"
 DETAILED_VERCEL_DIR = GENERATED_DIR / "vercel-audit-report"
@@ -73,6 +75,14 @@ def _env_positive_int(name: str, default: int) -> int:
     if value <= 0:
         raise RuntimeError(f"{name} must be a positive integer.")
     return value
+
+
+def _detailed_workbook_template_available() -> bool:
+    configured = os.getenv("AUDIT_WORKBOOK_TEMPLATE", "").strip()
+    candidate = Path(configured) if configured else ROOT_DIR / "shared" / "config" / "UX-Audit-Workbook-template.xlsx"
+    if not candidate.is_absolute():
+        candidate = ROOT_DIR / candidate
+    return candidate.is_file()
 
 
 MAX_JSON_BODY_BYTES = _env_positive_int("UX_MAX_JSON_BODY_BYTES", 1_048_576)
@@ -333,15 +343,16 @@ def _user_owns_resource(job_id: str, user: AuthenticatedUser) -> bool:
 
 
 def _artifact_job_id(target: Path) -> str:
-    try:
-        relative = target.resolve(strict=True).relative_to(GENERATED_DIR.resolve())
-    except (ValueError, FileNotFoundError):
-        return ""
     if target.is_symlink():
         return ""
-    for part in relative.parts:
-        if re.fullmatch(r"[a-f0-9]{12}", part) and _ownership_path(part).is_file():
-            return part
+    for root in (AUDITS_DIR, GENERATED_DIR):
+        try:
+            relative = target.resolve(strict=True).relative_to(root.resolve())
+        except (ValueError, FileNotFoundError):
+            continue
+        for part in relative.parts:
+            if re.fullmatch(r"[a-f0-9]{12}", part) and _ownership_path(part).is_file():
+                return part
     return ""
 
 
@@ -937,23 +948,18 @@ def _contains_symlink(path: Path, root: Path) -> bool:
     return False
 
 
-def _packaged_report_url(static_dir: Path) -> str:
-    audit_indexes = sorted(
-        (static_dir / "audits").glob("*/index.html"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    if audit_indexes:
-        return f"/audits/{quote(audit_indexes[0].parent.name, safe='')}/"
-    index_path = static_dir / "index.html"
-    return _artifact_url_for_path(index_path) if index_path.exists() else ""
+def _packaged_report_url(static_dir: Path, job_id: str) -> str:
+    index_path = static_dir / "audits" / job_id / "index.html"
+    if index_path.exists() and index_path.is_file():
+        return f"/audits/{quote(job_id, safe='')}/"
+    return ""
 
 
 def _package_local_report(report_dir: Path, vercel_dir: Path, job_id: str) -> str:
     from src.gtm_audit.vercel_static_deploy import package_report_for_vercel
 
     package_report_for_vercel(report_dir, vercel_dir, audit_slug=job_id)
-    return _packaged_report_url(vercel_dir)
+    return _packaged_report_url(vercel_dir, job_id)
 
 
 def _candidate_audit_static_roots() -> list[Path]:
@@ -979,6 +985,17 @@ def _local_audit_static_path(request_path: str) -> Path | None:
         return None
     if len(parts) == 2:
         rel = f"audits/{parts[1]}/index.html"
+
+    try:
+        workspace = AuditWorkspace(parts[1], AUDITS_DIR)
+        candidate = workspace.publication / rel
+        if not _contains_symlink(candidate, workspace.root):
+            target = candidate.resolve()
+            target.relative_to(workspace.root.resolve())
+            if target.exists() and target.is_file():
+                return target
+    except (ValueError, FileNotFoundError):
+        pass
 
     for root in _candidate_audit_static_roots():
         candidate = root / rel
@@ -1096,12 +1113,6 @@ def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, 
                 JOB_PROCESSES.pop(job_id, None)
 
 
-def _report_paths_for_mode(mode: str) -> tuple[Path, Path]:
-    if mode == "gtm":
-        return GTM_REPORT_DIR, GTM_VERCEL_DIR
-    return DETAILED_REPORT_DIR, DETAILED_VERCEL_DIR
-
-
 def _run_audit_job(job_id: str) -> None:
     with JOBS_LOCK:
         job = JOBS[job_id]
@@ -1115,6 +1126,8 @@ def _run_audit_job(job_id: str) -> None:
         url,
         "--mode",
         mode,
+        "--job-id",
+        job_id,
     ]
     if mode == "gtm" and _env_flag("GTM_SKIP_VISION", default=False):
         pipeline_command.append("--skip-vision")
@@ -1138,9 +1151,9 @@ def _run_audit_job(job_id: str) -> None:
     if _finish_if_cancelled(job_id):
         return
 
-    report_dir, vercel_dir = _report_paths_for_mode(mode)
+    workspace = AuditWorkspace(job_id, AUDITS_DIR)
     try:
-        local_report_url = _package_local_report(report_dir, vercel_dir, job_id)
+        local_report_url = _package_local_report(workspace.report, workspace.publication, job_id)
     except Exception as exc:
         _set_job(job_id, status="failed", error=f"Local editable report packaging failed: {exc}")
         return
@@ -1596,6 +1609,9 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._send_json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if parsed.path == "/api/capabilities":
+            self._send_json({"detailedAuditAvailable": _detailed_workbook_template_available()})
+            return
         if parsed.path == "/api/mobile/discovery":
             try:
                 self._send_json(_mobile_discovery_payload())
@@ -1778,6 +1794,8 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                 if audit_type == "website":
                     if mode not in {"detailed", "gtm"}:
                         raise ValueError("Audit mode must be either detailed or gtm.")
+                    if mode == "detailed" and not _detailed_workbook_template_available():
+                        raise ValueError("Detailed audits are unavailable because no configured workbook template exists.")
                     url = _validate_url(str(data.get("url") or ""))
                     job = _new_job(url, mode)
                     _assign_owner(job, user)

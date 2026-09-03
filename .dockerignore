@@ -29,6 +29,7 @@ docs/
 chatgpt_handoff/
 shared/output/
 shared/generated/
+shared/audits/
 output/
 artifacts/
 audit-artifacts/

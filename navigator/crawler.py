@@ -32,6 +32,7 @@ from src.security.network_policy import (
     install_playwright_network_guard,
     validate_public_url,
 )
+from src.audit.workspace import atomic_write_json
 
 try:
     from ai_navigation_helper import call_llama_navigation_detector
@@ -3126,30 +3127,26 @@ async def async_main() -> None:
     try:
         result = await crawl_site(args.url, options)
 
-        with output_file.open("w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2, ensure_ascii=False)
+        atomic_write_json(output_file, result)
 
         print_json(result)
         print(f"\\nSaved to {output_file}")
 
     except PlaywrightTimeoutError:
         error = {"error": "Failed to crawl: timeout"}
-        with output_file.open("w", encoding="utf-8") as f:
-            json.dump(error, f, indent=2, ensure_ascii=False)
+        atomic_write_json(output_file, error)
         print_json(error)
         raise SystemExit(1)
 
     except PlaywrightError as exc:
         error = {"error": f"Failed to crawl: browser error: {str(exc)}"}
-        with output_file.open("w", encoding="utf-8") as f:
-            json.dump(error, f, indent=2, ensure_ascii=False)
+        atomic_write_json(output_file, error)
         print_json(error)
         raise SystemExit(1)
 
     except Exception as exc:
         error = {"error": f"Failed to crawl: {str(exc)}"}
-        with output_file.open("w", encoding="utf-8") as f:
-            json.dump(error, f, indent=2, ensure_ascii=False)
+        atomic_write_json(output_file, error)
         print_json(error)
         raise SystemExit(1)
 

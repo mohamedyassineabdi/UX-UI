@@ -158,7 +158,15 @@ Generated reports may still be edited for local review. Phase 0 publication inte
 
 ## Generated Output
 
-Generated artifacts are written under `shared/generated/` and are ignored by git:
+Website audit artifacts are written to a deterministic job workspace and are ignored by git:
+
+```text
+shared/audits/<job-id>/
+```
+
+The server supplies the job ID. Manual website runs receive a unique `manual-...` ID unless `--job-id` is provided. Each workspace owns its crawler result, extraction JSON, checks, screenshots, audit JSON, report, publication package, and manifest; one audit never uses another audit's generated files.
+
+Other generated artifacts are written under `shared/generated/` and are ignored by git:
 
 - `shared/generated/audit-report/`
 - `shared/generated/gtm-report/`
@@ -184,7 +192,8 @@ src/gtm_audit/               UX/UI report generation modules
 src/mobile_audit/            Android/Appium extraction and mobile report logic
 src/report/                  Static detailed report generator
 src/ui/                      Local audit launcher server and frontend
-shared/generated/            Local generated reports and audit artifacts
+shared/audits/<job-id>/      Isolated website-audit workspace and generated evidence
+shared/generated/            Other local generated reports and audit artifacts
 ```
 
 ## Git / Push Hygiene

@@ -13,16 +13,7 @@ from urllib.parse import quote, urlparse
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-GENERATED_DIR = ROOT_DIR / "shared" / "generated"
-RESULTS_DIR = ROOT_DIR / "shared" / "output" / "results"
 ASSETS_DIR = Path(__file__).resolve().parent / "site_assets"
-
-DEFAULT_WEBSITE_MENU = GENERATED_DIR / "website_menu.json"
-DEFAULT_CLEANED = GENERATED_DIR / "html_cleaned.json"
-DEFAULT_RENDERED = GENERATED_DIR / "rendered_ui_extraction.json"
-DEFAULT_CHECKS = GENERATED_DIR / "sheet_checks.json"
-DEFAULT_WORKBOOK = GENERATED_DIR / "UX-Audit-Workbook-final.xlsx"
-DEFAULT_OUTPUT_DIR = GENERATED_DIR / "audit-report"
 SPOTLIGHT_FRAME_WIDTH = 1920
 SPOTLIGHT_FRAME_HEIGHT = 1080
 EY_STUDIO_LOGO_SVG = """
@@ -442,13 +433,6 @@ def build_spotlight_payload(
             "height": SPOTLIGHT_FRAME_HEIGHT,
         },
     }
-
-
-def load_latest_results(results_dir: Path) -> Optional[Dict[str, Any]]:
-    candidates = sorted(results_dir.glob("audit-results_*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
-    if not candidates:
-        return None
-    return load_json(candidates[0])
 
 
 def format_iso_timestamp(value: str) -> str:
@@ -1040,12 +1024,13 @@ def render_index_html(report_data: Dict[str, Any]) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate a static audit landing page from the audit artifacts.")
-    parser.add_argument("--website-menu", default=str(DEFAULT_WEBSITE_MENU), help="Path to website_menu.json")
-    parser.add_argument("--cleaned", default=str(DEFAULT_CLEANED), help="Path to html_cleaned.json")
-    parser.add_argument("--rendered", default=str(DEFAULT_RENDERED), help="Path to rendered_ui_extraction.json")
-    parser.add_argument("--checks", default=str(DEFAULT_CHECKS), help="Path to sheet_checks.json")
-    parser.add_argument("--workbook", default=str(DEFAULT_WORKBOOK), help="Optional workbook path")
-    parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory for the generated report site")
+    parser.add_argument("--website-menu", required=True, help="Path to website_menu.json")
+    parser.add_argument("--cleaned", required=True, help="Path to html_cleaned.json")
+    parser.add_argument("--rendered", required=True, help="Path to rendered_ui_extraction.json")
+    parser.add_argument("--checks", required=True, help="Path to sheet_checks.json")
+    parser.add_argument("--results", default="", help="Explicit path to this audit's audit_results.json")
+    parser.add_argument("--workbook", default="", help="Optional workbook path")
+    parser.add_argument("--output-dir", required=True, help="Directory for the generated report site")
     return parser.parse_args()
 
 
@@ -1061,6 +1046,7 @@ def main() -> None:
     cleaned_path = to_path(args.cleaned)
     rendered_path = to_path(args.rendered)
     checks_path = to_path(args.checks)
+    results_path = to_path(args.results) if clean_text(args.results) else None
     workbook_path = to_path(args.workbook) if clean_text(args.workbook) else None
     output_dir = to_path(args.output_dir)
 
@@ -1074,7 +1060,9 @@ def main() -> None:
     cleaned_data = load_json(cleaned_path)
     rendered_data = load_json(rendered_path)
     checks_data = load_json(checks_path)
-    results_data = load_latest_results(RESULTS_DIR)
+    if results_path is not None and not results_path.exists():
+        raise FileNotFoundError(f"Audit results JSON not found: {results_path}")
+    results_data = load_json(results_path) if results_path is not None else {}
 
     report_data = build_report_data(
         website_menu=website_menu,

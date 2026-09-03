@@ -7,6 +7,7 @@ import threading
 import pytest
 
 from src.security.auth import AuthenticationError
+from src.audit.workspace import AuditWorkspace
 from src.ui import server
 
 
@@ -142,6 +143,19 @@ def test_report_and_artifact_paths_cannot_bypass_ownership(api_server):
     assert server._artifact_job_id(unowned) == ""
 
 
+def test_website_workspace_report_resolves_by_job_id_without_sibling_search(api_server, monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "AUDITS_DIR", tmp_path / "audits")
+    audit = create_audit(api_server)
+    workspace = AuditWorkspace(audit["id"], server.AUDITS_DIR)
+    workspace.prepare(mode="gtm")
+    report = workspace.publication / "audits" / audit["id"] / "index.html"
+    report.parent.mkdir(parents=True)
+    report.write_text("workspace report", encoding="utf-8")
+
+    assert request(api_server, "GET", f"/audits/{audit['id']}/", token="token-a")[0] == 200
+    assert request(api_server, "GET", f"/audits/{audit['id']}/", token="token-b")[0] == 404
+
+
 def test_persisted_ownership_protects_report_after_job_memory_is_gone(api_server):
     audit = create_audit(api_server)
     job_id = audit["id"]
@@ -187,6 +201,22 @@ def test_authenticated_rate_limit_returns_retry_after(api_server, monkeypatch):
     status, headers, _body = request(api_server, "GET", "/api/criteria", token="token-a")
     assert status == 429
     assert int(headers["Retry-After"]) >= 1
+
+
+def test_detailed_mode_capability_is_exposed_and_unavailable_mode_is_rejected(api_server, monkeypatch):
+    monkeypatch.setattr(server, "_detailed_workbook_template_available", lambda: False)
+    status, _headers, body = request(api_server, "GET", "/api/capabilities", token="token-a")
+    assert status == 200
+    assert json.loads(body) == {"detailedAuditAvailable": False}
+    status, _headers, body = request(
+        api_server,
+        "POST",
+        "/api/audits",
+        token="token-a",
+        body={"auditType": "website", "mode": "detailed", "url": "https://example.com/"},
+    )
+    assert status == 400
+    assert b"workbook template" in body.lower()
 
 
 def test_appium_target_cannot_be_selected_by_request(monkeypatch):

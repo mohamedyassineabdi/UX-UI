@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlparse
 
+from src.audit.workspace import atomic_write_json
 from .common import (
     AXIS_DEFINITIONS,
     AXIS_IMPACT,
@@ -27,13 +28,6 @@ from .vision_client import run_gtm_vision_review
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-GENERATED_DIR = ROOT_DIR / "shared" / "generated"
-RESULTS_DIR = ROOT_DIR / "shared" / "output" / "results"
-DEFAULT_WEBSITE_MENU = GENERATED_DIR / "website_menu.json"
-DEFAULT_CLEANED = GENERATED_DIR / "html_cleaned.json"
-DEFAULT_RENDERED = GENERATED_DIR / "rendered_ui_extraction.json"
-DEFAULT_CHECKS = GENERATED_DIR / "sheet_checks.json"
-DEFAULT_OUTPUT = GENERATED_DIR / "gtm_audit.json"
 
 ACTION_WORDS = {"contact", "demander", "demo", "discover", "en savoir plus", "learn", "planifier", "request", "start", "talk", "try"}
 AUDIENCE_WORDS = {"b2b", "brand", "brands", "e-commerce", "enterprise", "equipes", "fabricants", "grossistes", "merchant", "merchants", "operations", "professionnel", "retailer", "retailers", "supply chain", "teams", "wholesale"}
@@ -62,23 +56,12 @@ def load_json(path: Path) -> Dict[str, Any]:
 
 
 def save_json(path: Path, data: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False, indent=2)
+    atomic_write_json(path, data)
 
 
-def to_path(raw: str, default: Path) -> Path:
-    if not clean_text(raw):
-        return default
+def to_path(raw: str) -> Path:
     path = Path(raw)
     return path if path.is_absolute() else ROOT_DIR / path
-
-
-def load_latest_results() -> Optional[Dict[str, Any]]:
-    candidates = sorted(RESULTS_DIR.glob("audit-results_*.json"), key=lambda item: item.stat().st_mtime, reverse=True)
-    if not candidates:
-        return None
-    return load_json(candidates[0])
 
 
 def collect_numbers(node: Any, key: str) -> List[float]:
@@ -2167,36 +2150,38 @@ def build_payload(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
         "recommendations": build_recommendations(priorities),
         "artifacts": {
             "websiteMenu": str(website_menu.get("homepage") or ""),
-            "cleanedPath": str(DEFAULT_CLEANED),
-            "renderedPath": str(DEFAULT_RENDERED),
-            "checksPath": str(DEFAULT_CHECKS),
+            "cleanedPath": "",
+            "renderedPath": "",
+            "checksPath": "",
         },
     }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate the GTM-oriented UX/UI audit.")
-    parser.add_argument("--website-menu", default=str(DEFAULT_WEBSITE_MENU))
-    parser.add_argument("--cleaned", default=str(DEFAULT_CLEANED))
-    parser.add_argument("--rendered", default=str(DEFAULT_RENDERED))
-    parser.add_argument("--checks", default=str(DEFAULT_CHECKS))
+    parser.add_argument("--website-menu", required=True)
+    parser.add_argument("--cleaned", required=True)
+    parser.add_argument("--rendered", required=True)
+    parser.add_argument("--checks", required=True)
     parser.add_argument("--results", default="")
-    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    parser.add_argument("--output", required=True)
     parser.add_argument("--skip-vision", action="store_true")
     args = parser.parse_args()
 
-    website_menu_path = to_path(args.website_menu, DEFAULT_WEBSITE_MENU)
-    cleaned_path = to_path(args.cleaned, DEFAULT_CLEANED)
-    rendered_path = to_path(args.rendered, DEFAULT_RENDERED)
-    checks_path = to_path(args.checks, DEFAULT_CHECKS)
-    output_path = to_path(args.output, DEFAULT_OUTPUT)
-    results_path = to_path(args.results, RESULTS_DIR) if clean_text(args.results) else None
+    website_menu_path = to_path(args.website_menu)
+    cleaned_path = to_path(args.cleaned)
+    rendered_path = to_path(args.rendered)
+    checks_path = to_path(args.checks)
+    output_path = to_path(args.output)
+    results_path = to_path(args.results) if clean_text(args.results) else None
 
     for required in (website_menu_path, cleaned_path, rendered_path, checks_path):
         if not required.exists():
             raise FileNotFoundError(f"Required input file not found: {required}")
 
-    results_data = load_latest_results() if results_path is None else load_json(results_path)
+    if results_path is not None and not results_path.exists():
+        raise FileNotFoundError(f"Audit results JSON not found: {results_path}")
+    results_data = load_json(results_path) if results_path is not None else {}
     payload = build_payload(
         load_json(website_menu_path),
         load_json(cleaned_path),

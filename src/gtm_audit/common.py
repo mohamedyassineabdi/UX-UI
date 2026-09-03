@@ -630,8 +630,7 @@ def save_audit_criteria_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("Criteria payload must be a JSON object.")
     _apply_criteria_payload(payload)
     saved = current_audit_criteria_payload(source="custom")
-    AUDIT_CRITERIA_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    AUDIT_CRITERIA_CONFIG_PATH.write_text(json.dumps(saved, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_json(AUDIT_CRITERIA_CONFIG_PATH, saved)
     return saved
 
 
@@ -766,3 +765,4 @@ def axis_prompt_contract(axis: Dict[str, Any]) -> Dict[str, Any]:
         "severity_ladder": dict(axis.get("severity_ladder") or {}),
         "evidence_expectations": list(axis.get("evidence_expectations") or []),
     }
+from src.audit.workspace import atomic_write_json

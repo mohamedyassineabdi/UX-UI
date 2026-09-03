@@ -85,6 +85,8 @@ output/
 shared/output/
 shared/generated/*
 !shared/generated/.gitkeep
+shared/audits/*
+!shared/audits/.gitkeep
 
 # Screenshots / captures / temporary exports
 **/screenshots/

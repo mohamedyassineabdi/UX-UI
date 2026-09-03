@@ -27,3 +27,7 @@ CSRF protection is not applicable to the Phase 0 mutation API: sensitive endpoin
 ## Infrastructure boundary
 
 This repository contains application, Docker, Nginx, and VPS deployment configuration; it does not contain AWS ALB listener or routing configuration. Application bearer authentication does not prove ALB protection. The infrastructure owner must verify ALB protections in AWS before an internet-facing release that uses an ALB.
+
+## Persistent criteria configuration
+
+Custom audit criteria are written atomically to `AUDIT_CRITERIA_CONFIG_PATH`; when unset, the application uses `shared/config/audit_axes.json`. Docker, Render, and other ephemeral container deployments must mount or otherwise provide durable storage at the configured path if custom criteria must survive a redeploy. The repository cannot provide that external persistent volume itself.

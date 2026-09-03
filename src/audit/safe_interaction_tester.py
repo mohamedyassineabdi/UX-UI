@@ -183,7 +183,7 @@ async def save_interaction_screenshot(
         build_page_folder_name(page_info["name"], "page")
     ]
     interactions_folder_path = join_path(
-        config["paths"]["screenshotDir"],
+        config["paths"].get("interactionScreenshotDir", config["paths"]["screenshotDir"]),
         website_folder_name,
         *folder_segments,
         "interactions",

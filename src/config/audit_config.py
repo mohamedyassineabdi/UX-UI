@@ -53,9 +53,10 @@ AUDIT_CONFIG = {
         "settleDelayMs": 350,
     },
     "paths": {
-        "inputFile": "shared/generated/website_menu.json",
-        "screenshotDir": "shared/output/screenshots",
-        "resultsDir": "shared/output/results",
+        # Website paths are supplied by src.main from the trusted AuditWorkspace.
+        "inputFile": "",
+        "screenshotDir": "",
+        "resultsDir": "",
     },
     "outputCleanup": {
         "clearWebsiteScreenshotsBeforeRun": True,

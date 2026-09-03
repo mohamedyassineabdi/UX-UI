@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -12,20 +13,13 @@ from dotenv import load_dotenv
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-NAVIGATOR_DIR = ROOT_DIR / "navigator"
-GENERATED_DIR = ROOT_DIR / "shared" / "generated"
-RESULTS_DIR = ROOT_DIR / "shared" / "output" / "results"
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
-WEBSITE_MENU_JSON = GENERATED_DIR / "website_menu.json"
-HTML_CLEANED_JSON = GENERATED_DIR / "html_cleaned.json"
-RENDERED_UI_JSON = GENERATED_DIR / "rendered_ui_extraction.json"
-CHECKS_JSON = GENERATED_DIR / "sheet_checks.json"
-WORKBOOK_OUTPUT = GENERATED_DIR / "UX-Audit-Workbook-final.xlsx"
-GTM_AUDIT_JSON = GENERATED_DIR / "gtm_audit.json"
-DETAILED_REPORT_OUTPUT_DIR = GENERATED_DIR / "audit-report"
-GTM_REPORT_OUTPUT_DIR = GENERATED_DIR / "gtm-report"
-GTM_VERCEL_OUTPUT_DIR = GENERATED_DIR / "vercel-gtm-report"
-DEFAULT_TEMPLATE_CANDIDATE = GENERATED_DIR / "UX-Audit-Workbook-template.xlsx"
+from src.audit.workspace import AuditWorkspace
+
+NAVIGATOR_DIR = ROOT_DIR / "navigator"
+DEFAULT_TEMPLATE_CANDIDATE = ROOT_DIR / "shared" / "config" / "UX-Audit-Workbook-template.xlsx"
 
 load_dotenv(ROOT_DIR / ".env")
 
@@ -87,15 +81,6 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
-def latest_audit_results_file() -> Optional[Path]:
-    candidates = sorted(
-        RESULTS_DIR.glob("audit-results_*.json"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    return candidates[0] if candidates else None
-
-
 def read_json_file(file_path: Path):
     with file_path.open("r", encoding="utf-8") as file:
         return json.load(file)
@@ -116,6 +101,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the full UX/UI auditor pipeline.")
     parser.add_argument("url", help="Website URL to crawl and audit")
     parser.add_argument(
+        "--job-id",
+        default="",
+        help="Trusted server audit job identifier. Manual runs receive a unique identifier when omitted.",
+    )
+    parser.add_argument(
         "--mode",
         choices=("detailed", "gtm"),
         default="detailed",
@@ -127,39 +117,14 @@ def parse_args() -> argparse.Namespace:
         help="Optional workbook template path. If omitted, the pipeline auto-discovers one.",
     )
     parser.add_argument(
-        "--checks-out",
-        default=str(CHECKS_JSON),
-        help="Path for the generated checks JSON output",
-    )
-    parser.add_argument(
-        "--workbook-out",
-        default=str(WORKBOOK_OUTPUT),
-        help="Path for the final workbook output",
-    )
-    parser.add_argument(
         "--skip-workbook",
         action="store_true",
         help="Generate checks JSON but skip workbook export",
     )
     parser.add_argument(
-        "--report-out",
-        default="",
-        help="Directory for the generated report site. Defaults depend on the selected mode.",
-    )
-    parser.add_argument(
-        "--gtm-out",
-        default=str(GTM_AUDIT_JSON),
-        help="Path for the GTM analysis JSON output when --mode gtm is used.",
-    )
-    parser.add_argument(
         "--skip-vision",
         action="store_true",
         help="When --mode gtm is used, skip the multimodal vision synthesis layer.",
-    )
-    parser.add_argument(
-        "--vercel-out",
-        default=str(GTM_VERCEL_OUTPUT_DIR),
-        help="Directory for the packaged Vercel static GTM report.",
     )
     parser.add_argument(
         "--deploy-vercel",
@@ -179,7 +144,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_workbook_template(explicit_path: str, workbook_output: Path) -> Path:
+def resolve_workbook_template(explicit_path: str) -> Path:
     candidates = []
 
     if explicit_path:
@@ -196,57 +161,27 @@ def resolve_workbook_template(explicit_path: str, workbook_output: Path) -> Path
         if resolved.exists():
             return resolved
 
-    workbook_files = []
-    for candidate in GENERATED_DIR.glob("*.xlsx"):
-        try:
-            resolved = candidate.resolve()
-        except Exception:
-            resolved = candidate
-        if resolved == workbook_output.resolve():
-            continue
-        workbook_files.append(candidate)
-
-    if workbook_files:
-        workbook_files.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-        return workbook_files[0]
-
     raise FileNotFoundError(
-        "No workbook template found. Pass --workbook-template or set AUDIT_WORKBOOK_TEMPLATE."
+        "Detailed audits require AUDIT_WORKBOOK_TEMPLATE or shared/config/UX-Audit-Workbook-template.xlsx."
     )
 
 
-def main() -> None:
-    args = parse_args()
+def run_pipeline(args: argparse.Namespace) -> None:
+    job_id = args.job_id or f"manual-{uuid.uuid4().hex}"
+    workspace = AuditWorkspace.for_repository(job_id, ROOT_DIR)
+    workspace.prepare(mode=args.mode)
+    checks_output = workspace.checks
+    workbook_output = workspace.workbook
+    report_output_dir = workspace.report
+    gtm_output = workspace.gtm_audit
+    vercel_output_dir = workspace.publication
+    website_menu = workspace.website_menu
+    html_cleaned = workspace.html_cleaned
+    rendered_ui = workspace.rendered_ui
+    audit_results = workspace.audit_results
 
-    checks_output = Path(args.checks_out)
-    if not checks_output.is_absolute():
-        checks_output = ROOT_DIR / checks_output
-
-    workbook_output = Path(args.workbook_out)
-    if not workbook_output.is_absolute():
-        workbook_output = ROOT_DIR / workbook_output
-
-    report_output_dir = Path(args.report_out or (
-        GTM_REPORT_OUTPUT_DIR if args.mode == "gtm" else DETAILED_REPORT_OUTPUT_DIR
-    ))
-    if not report_output_dir.is_absolute():
-        report_output_dir = ROOT_DIR / report_output_dir
-
-    gtm_output = Path(args.gtm_out)
-    if not gtm_output.is_absolute():
-        gtm_output = ROOT_DIR / gtm_output
-
-    vercel_output_dir = Path(args.vercel_out)
-    if not vercel_output_dir.is_absolute():
-        vercel_output_dir = ROOT_DIR / vercel_output_dir
-
-    ensure_dir(GENERATED_DIR)
-    ensure_dir(checks_output.parent)
-    ensure_dir(report_output_dir)
-    if args.mode == "gtm":
-        ensure_dir(gtm_output.parent)
-    if not args.skip_workbook:
-        ensure_dir(workbook_output.parent)
+    print(f"Audit job ID: {workspace.job_id}")
+    print(f"Audit workspace: {workspace.root}")
 
     print("\n[1/5] Running crawler...\n")
     crawler_args = [
@@ -254,7 +189,7 @@ def main() -> None:
         NAVIGATOR_DIR / "crawler.py",
         args.url,
         "--json-out",
-        WEBSITE_MENU_JSON,
+        website_menu,
         "--timeout",
         env_int("WEBSITE_CRAWLER_PAGE_TIMEOUT_SEC", 12),
     ]
@@ -263,19 +198,19 @@ def main() -> None:
 
     run_command(
         crawler_args,
-        cwd=GENERATED_DIR,
+        cwd=ROOT_DIR,
         timeout_sec=max(60, env_int("WEBSITE_CRAWLER_TIMEOUT_SEC", 240)),
     )
 
-    ensure_file_exists(WEBSITE_MENU_JSON)
-    validate_crawler_output(WEBSITE_MENU_JSON)
+    ensure_file_exists(website_menu)
+    validate_crawler_output(website_menu)
 
     print("\n[2/5] Running page audit...\n")
-    run_command([sys.executable, "-m", "src.main"], cwd=ROOT_DIR)
+    run_command([sys.executable, "-m", "src.main", "--job-id", workspace.job_id], cwd=ROOT_DIR)
 
-    ensure_file_exists(HTML_CLEANED_JSON)
-    ensure_file_exists(RENDERED_UI_JSON)
-    latest_results = latest_audit_results_file()
+    ensure_file_exists(html_cleaned)
+    ensure_file_exists(rendered_ui)
+    ensure_file_exists(audit_results)
 
     print("\n[3/5] Generating checks JSON...\n")
     checks_args = [
@@ -283,14 +218,13 @@ def main() -> None:
         "-m",
         "src.audit.checks.run_sheet_checks",
         "--cleaned",
-        HTML_CLEANED_JSON,
+        html_cleaned,
         "--rendered",
-        RENDERED_UI_JSON,
+        rendered_ui,
         "--output",
         checks_output,
     ]
-    if latest_results:
-        checks_args.extend(["--results", latest_results])
+    checks_args.extend(["--results", audit_results])
     run_command(checks_args, cwd=ROOT_DIR)
 
     ensure_file_exists(checks_output)
@@ -300,7 +234,7 @@ def main() -> None:
         if args.skip_workbook:
             print("\n[4/5] Workbook export skipped.\n")
         else:
-            workbook_template = resolve_workbook_template(args.workbook_template, workbook_output)
+            workbook_template = resolve_workbook_template(args.workbook_template)
 
             print("\n[4/5] Exporting workbook...\n")
             print(f"Using workbook template: {workbook_template}")
@@ -328,11 +262,11 @@ def main() -> None:
             "-m",
             "src.report.generate_audit_report",
             "--website-menu",
-            WEBSITE_MENU_JSON,
+            website_menu,
             "--cleaned",
-            HTML_CLEANED_JSON,
+            html_cleaned,
             "--rendered",
-            RENDERED_UI_JSON,
+            rendered_ui,
             "--checks",
             checks_output,
             "--output-dir",
@@ -340,6 +274,7 @@ def main() -> None:
         ]
         if workbook_for_report:
             report_args.extend(["--workbook", workbook_for_report])
+        report_args.extend(["--results", audit_results])
         run_command(report_args, cwd=ROOT_DIR)
         ensure_file_exists(report_output_dir / "index.html")
     else:
@@ -349,18 +284,17 @@ def main() -> None:
             "-m",
             "src.gtm_audit.generate_gtm_audit",
             "--website-menu",
-            WEBSITE_MENU_JSON,
+            website_menu,
             "--cleaned",
-            HTML_CLEANED_JSON,
+            html_cleaned,
             "--rendered",
-            RENDERED_UI_JSON,
+            rendered_ui,
             "--checks",
             checks_output,
             "--output",
             gtm_output,
         ]
-        if latest_results:
-            gtm_args.extend(["--results", latest_results])
+        gtm_args.extend(["--results", audit_results])
         if args.skip_vision:
             gtm_args.append("--skip-vision")
         run_command(gtm_args, cwd=ROOT_DIR)
@@ -421,9 +355,9 @@ def main() -> None:
             print(f"Vercel static package: {vercel_output_dir / 'index.html'}")
 
     print("\nPipeline completed successfully.")
-    print(f"Navigation JSON: {WEBSITE_MENU_JSON}")
-    print(f"Cleaned HTML JSON: {HTML_CLEANED_JSON}")
-    print(f"Rendered UI JSON: {RENDERED_UI_JSON}")
+    print(f"Navigation JSON: {website_menu}")
+    print(f"Cleaned HTML JSON: {html_cleaned}")
+    print(f"Rendered UI JSON: {rendered_ui}")
     print(f"Checks JSON: {checks_output}")
     if workbook_for_report:
         print(f"Workbook: {workbook_output}")
@@ -435,7 +369,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     try:
-        main()
+        run_pipeline(parse_args())
     except Exception as error:
         print("\nPipeline failed:", file=sys.stderr)
         print(str(error), file=sys.stderr)

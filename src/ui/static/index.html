@@ -5487,7 +5487,7 @@
       function artifactUrlFromPath(rawPath) {
         const value = String(rawPath || "").trim().replace(/\\/g, "/");
         if (!value) return "";
-        const markers = ["shared/output/", "shared/generated/"];
+        const markers = ["shared/audits/", "shared/output/", "shared/generated/"];
         for (const marker of markers) {
           const index = value.indexOf(marker);
           if (index !== -1) {
