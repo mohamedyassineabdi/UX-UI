@@ -1365,6 +1365,12 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
         f"&su={quote(booking_subject, safe='')}"
         f"&body={quote(booking_body, safe='')}"
     )
+    coverage = payload.get("coverage") or {}
+    coverage_summary = coverage.get("summary") or {}
+    coverage_banner = ""
+    if coverage_summary:
+        status = clean_text(coverage_summary.get("coverageStatus")) or "unknown"
+        coverage_banner = f'<section style="margin:20px 0;padding:16px;border:2px solid {"#cf513f" if status == "incomplete" else "#11886e"};border-radius:10px"><strong>Audit scope: deterministic representative page sample ({html.escape(status)})</strong><br>Discovered: {safe_int(coverage_summary.get("discovered"))} · Selected: {safe_int(coverage_summary.get("selected"))} · Completed: {safe_int(coverage_summary.get("completed"))} · Failed: {safe_int(coverage_summary.get("failed"))} · Excluded: {safe_int(coverage_summary.get("excluded"))} · Coverage: {float(coverage_summary.get("coverageRatio") or 0) * 100:.0f}%</section>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -2953,6 +2959,7 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
   </style>
 </head>
 <body>
+  {coverage_banner}
   <div class="shell">
     <header class="topbar">
       <div class="brand-lockups">

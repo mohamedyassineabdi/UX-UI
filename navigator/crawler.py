@@ -9,11 +9,16 @@ import random
 import re
 import sys
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib import robotparser
 from urllib.parse import urljoin, urlparse, urlunparse
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import httpx
 from bs4 import BeautifulSoup
@@ -33,13 +38,13 @@ from src.security.network_policy import (
     validate_public_url,
 )
 from src.audit.workspace import atomic_write_json
+from src.audit.discovery import canonical_url, merge_candidates, related_site
 
 try:
     from ai_navigation_helper import call_llama_navigation_detector
 except ImportError:
     from navigator.ai_navigation_helper import call_llama_navigation_detector
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_FILE = PROJECT_ROOT / "shared" / "generated" / "website_menu.json"
 
 USER_AGENTS = [
@@ -132,21 +137,6 @@ COOKIE_SELECTORS = [
     "button:has-text('Accepter')",
 ]
 
-WHITELIST_EXTERNAL_SUBDOMAINS = (
-    "docs.",
-    "support.",
-    "dashboard.",
-)
-
-BLOCKLIST_URL_PARTS_FOR_MENU = [
-    "/privacy",
-    "/cookie",
-    "/legal",
-    "/licenses",
-    "/sitemap",
-    "/terms",
-]
-
 MENU_STRUCTURE_SELECTORS = [
     "header",
     "nav",
@@ -213,13 +203,18 @@ class CrawlOptions:
     debug: bool
     use_ai_nav: bool = False
     ai_debug_dir: str = "ai_nav_debug"
+    locale: str = "auto"
+    robots_policy: str = "respect"
+    include_auth_pages: bool = False
 
 
 @dataclass
 class RobotsInfo:
     robots_url: str
-    sitemap_url: Optional[str]
+    sitemap_urls: List[str]
     allowed: bool
+    status: str = "missing"
+    parser: Any = None
 
 
 def force_utf8_output() -> None:
@@ -272,38 +267,12 @@ def normalize_menu_label(text: str) -> str:
 
 
 def normalize_url(url: str) -> str:
-    parsed = urlparse(url.strip())
-    scheme = parsed.scheme or "https"
-    netloc = parsed.netloc
-    path = parsed.path or "/"
-    if not netloc and parsed.path:
-        netloc = parsed.path
-        path = "/"
-    normalized = urlunparse((scheme, netloc, path, "", "", ""))
-    return normalized.rstrip("/") if path == "/" else normalized
+    return canonical_url(url)
 
 
 def force_english_url(url: Optional[str]) -> Optional[str]:
-    if not url:
-        return url
-    parsed = urlparse(url)
-    path = parsed.path or "/"
-    parts = path.split("/")
-    if len(parts) > 1:
-        first = parts[1].lower()
-        if first in {"en", "en-us", "en-gb"}:
-            return url
-        if re.fullmatch(r"[a-z]{2}", first):
-            parts = [""] + parts[2:]
-            path = "/".join(parts) or "/"
-        elif re.fullmatch(r"[a-z]{2}-[a-z]{2}", first):
-            if first.startswith("en-"):
-                return url
-            parts = [""] + parts[2:]
-            path = "/".join(parts) or "/"
-    return urlunparse(
-        (parsed.scheme, parsed.netloc, path, parsed.params, parsed.query, parsed.fragment)
-    )
+    """Compatibility shim: Phase 2A preserves site locale paths unchanged."""
+    return url
 
 
 def absolute_url(base_url: str, href: str) -> Optional[str]:
@@ -333,10 +302,8 @@ def same_domain(base_url: str, other_url: str) -> bool:
 
 
 def allowed_external_for_nav(base_url: str, other_url: str) -> bool:
-    if same_domain(base_url, other_url):
-        return True
-    host = normalize_host(urlparse(other_url).netloc)
-    return host.startswith(WHITELIST_EXTERNAL_SUBDOMAINS)
+    configured = {normalize_host(host) for host in os.getenv("UX_AUDIT_ALLOWED_DISCOVERY_HOSTS", "").split(",") if host.strip()}
+    return related_site(base_url, other_url, configured)
 
 
 def is_homepage_url(base_url: str, url: str) -> bool:
@@ -356,7 +323,7 @@ def safe_int(value: Any, default: int = 0) -> int:
 
 def looks_like_bad_menu_url(url: Optional[str]) -> bool:
     u = (url or "").lower()
-    return any(part in u for part in BLOCKLIST_URL_PARTS_FOR_MENU)
+    return "/sitemap" in u
 
 
 def looks_like_category_or_nav_url(base_url: str, url: Optional[str]) -> bool:
@@ -553,7 +520,7 @@ async def fetch_text(client: httpx.AsyncClient, url: str, debug: bool = False) -
 async def get_robots_info(client: httpx.AsyncClient, homepage: str, user_agent: str, debug: bool) -> RobotsInfo:
     parsed = urlparse(homepage)
     robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
-    sitemap_url = None
+    sitemap_urls: List[str] = []
     allowed = True
 
     text, status = await fetch_text(client, robots_url, debug=debug)
@@ -563,27 +530,63 @@ async def get_robots_info(client: httpx.AsyncClient, homepage: str, user_agent: 
         allowed = rp.can_fetch(user_agent, homepage)
         for line in text.splitlines():
             if line.lower().startswith("sitemap:"):
-                sitemap_url = line.split(":", 1)[1].strip()
-                break
+                candidate = line.split(":", 1)[1].strip()
+                try:
+                    sitemap_urls.append(validate_public_url(candidate).url)
+                except Exception:
+                    debug_log(debug, "Ignoring unsafe sitemap URL declared by robots.txt")
+        return RobotsInfo(robots_url=robots_url, sitemap_urls=sitemap_urls, allowed=allowed, status="available", parser=rp)
     else:
         debug_log(debug, f"No robots.txt found or unreadable: {robots_url}")
+    return RobotsInfo(robots_url=robots_url, sitemap_urls=[], allowed=True, status="missing" if status == 404 else "unreadable")
 
-    return RobotsInfo(robots_url=robots_url, sitemap_url=sitemap_url, allowed=allowed)
 
-
-async def guess_sitemap(client: httpx.AsyncClient, homepage: str, robots_info: RobotsInfo, debug: bool) -> Optional[str]:
-    if robots_info.sitemap_url:
-        try:
-            return validate_public_url(robots_info.sitemap_url).url
-        except ValueError:
-            debug_log(debug, "Ignoring an unsafe sitemap URL declared by robots.txt")
-            return None
+async def sitemap_locations(client: httpx.AsyncClient, homepage: str, robots_info: RobotsInfo, debug: bool) -> List[str]:
+    if robots_info.sitemap_urls:
+        return sorted(set(robots_info.sitemap_urls))
     parsed = urlparse(homepage)
     candidate = f"{parsed.scheme}://{parsed.netloc}/sitemap.xml"
     _, status = await fetch_text(client, candidate, debug=debug)
     if status == 200:
-        return candidate
-    return None
+        return [candidate]
+    return []
+
+
+async def parse_sitemaps(client: httpx.AsyncClient, locations: List[str], debug: bool) -> Tuple[List[str], List[Dict[str, str]]]:
+    """Bounded sitemap parsing; every loc is revalidated before acceptance."""
+    max_files = max(1, int(os.getenv("UX_SITEMAP_MAX_FILES", "20")))
+    max_urls = max(1, int(os.getenv("UX_SITEMAP_MAX_URLS", "1000")))
+    max_bytes = max(1024, int(os.getenv("UX_SITEMAP_MAX_BYTES", "2097152")))
+    max_depth = max(0, int(os.getenv("UX_SITEMAP_MAX_DEPTH", "3")))
+    queue = [(location, 0) for location in sorted(set(locations))]
+    seen, urls, limitations = set(), [], []
+    while queue and len(seen) < max_files and len(urls) < max_urls:
+        location, depth = queue.pop(0)
+        if location in seen: continue
+        seen.add(location)
+        text, status = await fetch_text(client, location, debug)
+        if not text or status != 200:
+            limitations.append({"url": location, "reason": "unreadable_sitemap"}); continue
+        if len(text.encode("utf-8")) > max_bytes:
+            limitations.append({"url": location, "reason": "sitemap_too_large"}); continue
+        try:
+            root = ET.fromstring(text)
+        except ET.ParseError:
+            limitations.append({"url": location, "reason": "malformed_sitemap"}); continue
+        is_index = root.tag.lower().endswith("sitemapindex")
+        for loc in root.findall(".//{*}loc"):
+            raw = (loc.text or "").strip()
+            try: candidate = validate_public_url(raw).url
+            except Exception:
+                limitations.append({"url": raw[:200], "reason": "unsafe_sitemap_location"}); continue
+            if is_index:
+                if depth < max_depth: queue.append((candidate, depth + 1))
+                else: limitations.append({"url": candidate, "reason": "sitemap_depth_limit"})
+            elif candidate not in urls:
+                urls.append(candidate)
+                if len(urls) >= max_urls: limitations.append({"url": location, "reason": "sitemap_url_limit"}); break
+    if queue: limitations.append({"reason": "sitemap_file_limit"})
+    return urls, limitations
 
 
 async def get_page_language(page: Page) -> str:
@@ -2770,6 +2773,12 @@ async def run_navigation_pass(context: BrowserContext, page: Page, homepage: str
     search = await detect_search_on_current_page(page, homepage, options.debug)
 
     soup = BeautifulSoup(html, "lxml")
+    footer_links = []
+    for anchor in soup.select("footer a[href]")[:120]:
+        url = absolute_url(homepage, str(anchor.get("href") or ""))
+        label = normalize_menu_label(anchor.get_text(" ", strip=True))
+        if url and label and allowed_external_for_nav(homepage, url):
+            footer_links.append({"name": label, "url": url})
     title = clean_text(page_metrics.get("title")) or clean_text(soup.title.string if soup.title else "")
 
     return {
@@ -2785,6 +2794,7 @@ async def run_navigation_pass(context: BrowserContext, page: Page, homepage: str
             "images_found": safe_int(page_metrics.get("images", 0)),
             "mode": "unknown",
             "page_language": page_language,
+            "footer_links": dedupe_links_prefer_shorter(footer_links),
         },
     }
 
@@ -3038,7 +3048,8 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
         headers={**DEFAULT_HEADERS, "User-Agent": user_agent},
     ) as client:
         robots_info = await get_robots_info(client, homepage, user_agent, options.debug)
-        sitemap_url = await guess_sitemap(client, homepage, robots_info, options.debug)
+        sitemap_urls = await sitemap_locations(client, homepage, robots_info, options.debug)
+        sitemap_pages, sitemap_limitations = await parse_sitemaps(client, sitemap_urls, options.debug)
 
         async with async_playwright() as pw:
             debug_log(options.debug, "Launching Chromium")
@@ -3047,10 +3058,12 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
                 args=[f"--host-resolver-rules={chromium_host_resolver_rules([validated_homepage])}"],
             )
 
+            browser_locale = options.locale if options.locale != "auto" else None
+            language_header = browser_locale or ""
             desktop_context = await browser.new_context(
                 user_agent=user_agent,
-                locale="en-US",
-                extra_http_headers={**DEFAULT_HEADERS, "Accept-Language": "en-US,en;q=1"},
+                locale=browser_locale,
+                extra_http_headers={**DEFAULT_HEADERS, **({"Accept-Language": language_header} if language_header else {})},
                 viewport={"width": 1440, "height": 1200},
                 java_script_enabled=True,
                 is_mobile=False,
@@ -3060,8 +3073,8 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
 
             mobile_context = await browser.new_context(
                 user_agent=user_agent,
-                locale="en-US",
-                extra_http_headers={**DEFAULT_HEADERS, "Accept-Language": "en-US,en;q=1"},
+                locale=browser_locale,
+                extra_http_headers={**DEFAULT_HEADERS, **({"Accept-Language": language_header} if language_header else {})},
                 viewport={"width": 390, "height": 844},
                 java_script_enabled=True,
                 is_mobile=True,
@@ -3078,16 +3091,32 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
                 mobile_result = await crawl_single_view(mobile_context, homepage, options, mobile=True)
 
                 merged = merge_nav_results(homepage, desktop_result, mobile_result)
-                requested_language = "en-US"
-                merged["requested_language"] = requested_language
-                detected_language = merged.get("language", "unknown")
-
-                if detected_language.lower() not in {"en", "en-us", "en-gb"}:
-                    merged["language_warning"] = f"Requested English, but detected page language was {detected_language}."
+                merged["requested_language"] = options.locale
+                candidates = [{"url": homepage, "label": "Home", "source": "homepage"}]
+                def collect(items, source="navigation"):
+                    for item in items or []:
+                        if item.get("url"): candidates.append({"url": item["url"], "label": item.get("name", ""), "source": source})
+                        collect(item.get("children") or [], "submenu")
+                collect(merged.get("navigation") or [])
+                for result in (desktop_result, mobile_result):
+                    for footer in (result.get("extra") or {}).get("footer_links") or []:
+                        candidates.append({"url": footer.get("url"), "label": footer.get("name", ""), "source": "footer"})
+                for key in ("signin", "signup"):
+                    auth_item = (merged.get("auth") or {}).get(key) or {}
+                    if auth_item.get("url"): candidates.append({"url": auth_item["url"], "label": auth_item.get("name", key), "source": "auth_detection"})
+                candidates.extend({"url": url, "label": "", "source": "sitemap"} for url in sitemap_pages)
+                robots_checker = (lambda url: robots_info.parser.can_fetch(user_agent, url)) if robots_info.parser else None
+                pages = merge_candidates(candidates, homepage, include_auth_pages=options.include_auth_pages, robots_allowed=robots_checker if options.robots_policy == "respect" else None)
+                if options.robots_policy == "report_only" and robots_checker:
+                    for page in pages: page.robots_allowed = bool(robots_checker(page.canonical_url))
+                merged["discovered_pages"] = [page.as_dict() for page in pages]
 
                 merged["extra"].update({
-                    "sitemap_found": sitemap_url,
+                    "sitemaps": sitemap_urls,
+                    "sitemapLimitations": sitemap_limitations,
                     "robots_txt": robots_info.robots_url,
+                    "robotsStatus": robots_info.status,
+                    "robotsPolicy": options.robots_policy,
                     "crawl_time_ms": int((time.perf_counter() - start_time) * 1000),
                 })
                 return merged
@@ -3109,6 +3138,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--use-ai-nav", action="store_true", help="Enable LLaMA/Ollama AI fallback for hidden or weak navigation")
     parser.add_argument("--ai-debug-dir", default="ai_nav_debug", help="Directory for AI debug artifacts")
+    parser.add_argument("--locale", default="auto", help="Requested browser locale; auto preserves the site's default behavior")
+    parser.add_argument("--robots-policy", choices=("respect", "report_only"), default=os.getenv("UX_AUDIT_ROBOTS_POLICY", "respect"), help="Robots policy for automatic page sampling")
+    parser.add_argument("--include-auth-pages", action="store_true", help="Allow public authentication pages in discovery sampling; credentials are never submitted")
     return parser.parse_args()
 
 
@@ -3119,6 +3151,9 @@ async def async_main() -> None:
         debug=args.debug,
         use_ai_nav=args.use_ai_nav,
         ai_debug_dir=args.ai_debug_dir,
+        locale=args.locale,
+        robots_policy=args.robots_policy,
+        include_auth_pages=args.include_auth_pages,
     )
 
     output_file = Path(args.json_out) if args.json_out else DEFAULT_OUTPUT_FILE

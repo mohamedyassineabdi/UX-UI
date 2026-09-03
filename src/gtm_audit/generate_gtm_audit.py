@@ -2164,6 +2164,7 @@ def main() -> None:
     parser.add_argument("--rendered", required=True)
     parser.add_argument("--checks", required=True)
     parser.add_argument("--results", default="")
+    parser.add_argument("--coverage", default="")
     parser.add_argument("--output", required=True)
     parser.add_argument("--skip-vision", action="store_true")
     args = parser.parse_args()
@@ -2193,6 +2194,11 @@ def main() -> None:
     payload["artifacts"]["cleanedPath"] = str(cleaned_path)
     payload["artifacts"]["renderedPath"] = str(rendered_path)
     payload["artifacts"]["checksPath"] = str(checks_path)
+    if clean_text(args.coverage):
+        coverage_path = to_path(args.coverage)
+        if not coverage_path.exists():
+            raise FileNotFoundError(f"Coverage manifest not found: {coverage_path}")
+        payload["coverage"] = load_json(coverage_path)
     save_json(output_path, payload)
     print(f"GTM audit written to: {output_path}")
 

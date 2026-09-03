@@ -21,6 +21,7 @@ from src.audit.page_visit_helpers import dismiss_cookie_banners, extract_basic_p
 from src.audit.html_postprecess import clean_html_output
 from src.audit.rendered_css_extractor import build_rendered_ui_output
 from src.audit.workspace import AuditWorkspace, atomic_write_json
+from src.audit.discovery import DiscoveredPage, coverage_manifest, select_pages
 from src.config.audit_config import AUDIT_CONFIG
 from src.security.network_policy import (
     chromium_host_resolver_rules,
@@ -581,6 +582,8 @@ async def new_isolated_context(browser, config: Dict[str, Any], validated_urls, 
         ignore_https_errors=config["browser"].get("ignoreHttpsErrors", False),
         is_mobile=mobile,
         service_workers="block",
+        locale=config["browser"].get("locale") or None,
+        extra_http_headers={"Accept-Language": config["browser"]["locale"]} if config["browser"].get("locale") else None,
     )
     await install_playwright_network_guard(context, validated_urls)
     return context
@@ -597,6 +600,8 @@ def workspace_config(workspace: AuditWorkspace) -> Dict[str, Any]:
     }
     # A new job workspace is empty. Never clean a shared historical evidence tree.
     config["outputCleanup"] = {**config.get("outputCleanup", {}), "clearWebsiteScreenshotsBeforeRun": False}
+    locale = os.getenv("UX_AUDIT_LOCALE", "auto").strip()
+    config["browser"]["locale"] = "" if locale == "auto" else locale
     return config
 
 
@@ -620,10 +625,33 @@ async def async_main(job_id: str):
         max_pages = int(os.getenv("UX_AUDIT_MAX_PAGES", "50"))
     except ValueError as exc:
         raise RuntimeError("UX_AUDIT_MAX_PAGES must be a positive integer.") from exc
-    try:
-        unique_pages, truncated_page_count = apply_page_limit(unique_pages, max_pages)
-    except ValueError as exc:
-        raise RuntimeError("UX_AUDIT_MAX_PAGES must be a positive integer.") from exc
+    discovered_records = raw_input.get("discovered_pages") if isinstance(raw_input, dict) else None
+    coverage_pages: list[DiscoveredPage] = []
+    if isinstance(discovered_records, list):
+        for record in discovered_records:
+            if not isinstance(record, dict):
+                continue
+            coverage_pages.append(DiscoveredPage(
+                str(record.get("requestedUrl") or record.get("canonicalUrl") or ""),
+                str(record.get("canonicalUrl") or record.get("requestedUrl") or ""),
+                str(record.get("label") or ""), set(record.get("discoverySources") or []),
+                page_type=str(record.get("pageType") or "content"), is_auth=bool(record.get("isAuth")), is_legal=bool(record.get("isLegal")), is_external=bool(record.get("isExternal")), selection_status=str(record.get("selectionStatus") or "discovered"), exclusion_reason=str(record.get("exclusionReason") or ""), robots_allowed=record.get("robotsAllowed"), page_id=str(record.get("pageId") or ""),
+            ))
+        select_pages(coverage_pages, max_pages)
+        selected_by_url = {page.canonical_url: page for page in coverage_pages if page.selection_status == "selected"}
+        unique_pages = [page for page in unique_pages if any(candidate.canonical_url.rstrip("/") == str(page.get("url", "")).rstrip("/") for candidate in selected_by_url.values())]
+        # Sitemap-only pages remain selectable even when not present in legacy navigation JSON.
+        for candidate in selected_by_url.values():
+            if not any(str(page.get("url", "")).rstrip("/") == candidate.canonical_url.rstrip("/") for page in unique_pages):
+                unique_pages.append(normalize_flat_page({"name": candidate.label or candidate.page_type.title(), "url": candidate.canonical_url, "sourceType": candidate.page_type}, len(unique_pages)))
+        truncated_page_count = sum(page.exclusion_reason == "page_limit" for page in coverage_pages)
+    else:
+        try:
+            unique_pages, truncated_page_count = apply_page_limit(unique_pages, max_pages)
+        except ValueError as exc:
+            raise RuntimeError("UX_AUDIT_MAX_PAGES must be a positive integer.") from exc
+        coverage_pages = [DiscoveredPage(str(page.get("url") or ""), str(page.get("url") or ""), str(page.get("name") or ""), {str(page.get("sourceType") or "navigation")}) for page in unique_pages]
+        select_pages(coverage_pages, max_pages)
     if truncated_page_count:
         print(f"Page candidate limit applied: skipped {truncated_page_count} page(s) before audit execution.")
 
@@ -636,6 +664,11 @@ async def async_main(job_id: str):
             "No visitable pages were extracted from the input JSON. "
             "The crawler likely failed or did not return usable navigation links."
         )
+
+    threshold = float(os.getenv("UX_AUDIT_MIN_COVERAGE_RATIO", "0.8"))
+    if not 0 < threshold <= 1:
+        raise RuntimeError("UX_AUDIT_MIN_COVERAGE_RATIO must be greater than 0 and at most 1.")
+    atomic_write_json(workspace.run_config, {"schemaVersion": 1, "auditId": workspace.job_id, "locale": os.getenv("UX_AUDIT_LOCALE", "auto"), "browser": config["browser"], "robotsPolicy": ((raw_input.get("extra") or {}).get("robotsPolicy") if isinstance(raw_input, dict) else "respect") or "respect", "pageCap": max_pages, "selectionStrategy": "deterministic representative sampling", "includeAuthPages": bool(config["inputParsing"].get("includeAuthPages")), "coverageThreshold": threshold})
 
     if config["browser"].get("browserType") != "chromium":
         raise RuntimeError("Phase 0 network isolation supports Chromium only.")
@@ -706,6 +739,19 @@ async def async_main(job_id: str):
                 worker,
                 config["execution"]["pageConcurrency"],
             )
+            by_url = {str(item.get("url") or "").rstrip("/"): item for item in page_results if isinstance(item, dict)}
+            for page in coverage_pages:
+                result = by_url.get(page.canonical_url.rstrip("/"))
+                if not result or page.selection_status != "selected":
+                    continue
+                page.selection_status = "completed" if result.get("status") == "success" else "failed"
+                page.selection_reason = "selected_for_collection"
+                page.exclusion_reason = ""
+                page.collection_status = str(result.get("collectionStatus") or ("collected" if result.get("status") == "success" else "failed"))
+                page.http_status = result.get("mainDocumentStatus")
+                page.final_url = str(result.get("finalUrl") or "")
+                page.failure_reason = str(result.get("failureReason") or result.get("error") or "")[:300]
+                page.language = str((result.get("pageMetadata") or {}).get("language") or "")
             responsive_profiles = await collect_responsive_mobile_profiles(browser, unique_pages, config, validated_urls)
             for result, mobile_profile in zip(page_results, responsive_profiles):
                 if isinstance(result, dict):
@@ -723,6 +769,8 @@ async def async_main(job_id: str):
 
     finished_at = datetime.now()
     run_summary = summarize_run(page_results)
+    manifest = coverage_manifest(workspace.job_id, coverage_pages, robots_policy=((raw_input.get("extra") or {}).get("robotsPolicy") if isinstance(raw_input, dict) else "respect") or "respect", discovery={"sources": ["homepage", "navigation", "footer", "sitemap"], "robots": (raw_input.get("extra") or {}).get("robots_txt", "") if isinstance(raw_input, dict) else ""}, threshold=threshold)
+    atomic_write_json(workspace.coverage_manifest, manifest)
 
     summary = {
         "runStartedAt": started_at.isoformat(),
@@ -738,6 +786,9 @@ async def async_main(job_id: str):
         "uniquePagesVisited": len(unique_pages),
         "candidatePagesTruncated": truncated_page_count,
         "pageLimit": max_pages,
+        "coverageManifest": str(workspace.coverage_manifest),
+        "coverageStatus": manifest["summary"]["coverageStatus"],
+        "coverageRatio": manifest["summary"]["coverageRatio"],
         "duplicatePagesSkipped": len(duplicates),
         "pagesSucceeded": len([result for result in page_results if result["status"] == "success"]),
         "pagesFailed": len([result for result in page_results if result["status"] == "failed"]),

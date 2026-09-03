@@ -210,6 +210,12 @@ Useful controls are `UX_AUDIT_WORKER_CONCURRENCY` (default `1`), `UX_AUDIT_MAX_Q
 
 `UX_DEPLOYMENT_MODE=distributed` intentionally fails startup in this release: a local SQLite file cannot coordinate multiple containers. A production multi-instance deployment needs a shared PostgreSQL-capable job backend plus its external database provisioning. Likewise, custom criteria (`AUDIT_CRITERIA_CONFIG_PATH`) and audit workspaces need mounted durable storage on ephemeral platforms if they must survive redeploys.
 
+## Website discovery and coverage
+
+Website audits use deterministic representative page sampling, not a claim of a full-site crawl. Discovery combines homepage navigation, useful footer links, robots-declared or standard sitemaps, and optional public authentication pages. `robots.txt` defaults to `respect` (`UX_AUDIT_ROBOTS_POLICY=respect`); `report_only` records disallowance without silently hiding it. Authentication pages are excluded by default and can only be included with the explicit `UX_AUDIT_INCLUDE_AUTH_PAGES=1` option; no credentials are entered or forms submitted.
+
+The default locale is `auto`: site URLs such as `/fr/products` are preserved. Set `UX_AUDIT_LOCALE` only when a consultant deliberately wants one browser locale. Each run saves a sanitized effective configuration at `input/run_config.json` and a coverage manifest at `coverage/manifest.json`. The manifest distinguishes discovered, selected, completed, failed, and excluded pages; it records page-limit, robots, authentication, duplicate/domain, and collection outcomes. `UX_AUDIT_MIN_COVERAGE_RATIO` (default `0.8`) marks a completed execution as coverage `incomplete` when too few selected pages were collected.
+
 ## Git / Push Hygiene
 
 The `.gitignore` excludes local secrets, virtual environments, caches, Playwright artifacts, generated reports, generated screenshots, Figma audit outputs, Vercel local state, and imported archive files.

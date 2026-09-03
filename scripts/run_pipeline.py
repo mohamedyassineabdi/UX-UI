@@ -193,6 +193,9 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "--timeout",
         env_int("WEBSITE_CRAWLER_PAGE_TIMEOUT_SEC", 12),
     ]
+    crawler_args.extend(["--locale", os.getenv("UX_AUDIT_LOCALE", "auto"), "--robots-policy", os.getenv("UX_AUDIT_ROBOTS_POLICY", "respect")])
+    if env_flag("UX_AUDIT_INCLUDE_AUTH_PAGES", False):
+        crawler_args.append("--include-auth-pages")
     if env_flag("CRAWLER_USE_AI_NAV") or env_flag("USE_AI_NAV"):
         crawler_args.append("--use-ai-nav")
 
@@ -295,6 +298,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
             gtm_output,
         ]
         gtm_args.extend(["--results", audit_results])
+        gtm_args.extend(["--coverage", workspace.coverage_manifest])
         if args.skip_vision:
             gtm_args.append("--skip-vision")
         run_command(gtm_args, cwd=ROOT_DIR)

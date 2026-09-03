@@ -148,6 +148,18 @@ class AuditWorkspace:
     def logs(self) -> Path:
         return self.root / "logs"
 
+    @property
+    def coverage_dir(self) -> Path:
+        return self.root / "coverage"
+
+    @property
+    def coverage_manifest(self) -> Path:
+        return self.coverage_dir / "manifest.json"
+
+    @property
+    def run_config(self) -> Path:
+        return self.input_dir / "run_config.json"
+
     def prepare(self, *, mode: str) -> None:
         if self.root.exists() and self.root.is_symlink():
             raise ValueError("Audit workspace may not be a symlink.")
@@ -162,6 +174,7 @@ class AuditWorkspace:
             self.report,
             self.publication,
             self.logs,
+            self.coverage_dir,
         ):
             if directory.exists() and directory.is_symlink():
                 raise ValueError("Audit workspace directory may not be a symlink.")
@@ -184,6 +197,7 @@ class AuditWorkspace:
                     "gtmAudit": str(self.gtm_audit.relative_to(self.root)),
                     "report": str(self.report.relative_to(self.root)),
                     "publication": str(self.publication.relative_to(self.root)),
+                    "coverageManifest": str(self.coverage_manifest.relative_to(self.root)),
                 },
             },
         )
