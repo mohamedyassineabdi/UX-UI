@@ -1,33 +1,16 @@
 # Security operations and release gate
 
-## Credential incident procedure
+## Legacy credential incident
 
-The removed local tunnel credential must be treated as compromised. The repository owner must:
+The old tunnel credential must be treated as compromised. The repository owner must confirm that it has been revoked or rotated in the provider dashboard and that every local tunnel configuration using it has been disabled or updated. Never paste the old or replacement value into tickets, chat, CI logs, commands, test fixtures, or documentation.
 
-1. Revoke the exposed ngrok credential in the provider dashboard and issue a replacement only if the tunnel is still needed.
-2. Delete or invalidate every local/ngrok agent configuration that used it, stop related tunnels, and verify the old credential can no longer authenticate.
-3. Coordinate a protected maintenance window for history cleanup. Use `git filter-repo` on a disposable mirror clone to remove `UX-UI_-Agent/info .txt` from every ref, inspect the rewritten clone, and run a redacted full-history secret scan there.
-4. After review, temporarily permit the designated maintainer to perform the required protected force-push. Do not run this from a normal working clone and do not bypass branch protections informally.
-5. Restore protections immediately. Require every collaborator and deployment workspace to delete its old clone and reclone; old objects must not be merged or pushed back.
+The legacy incident path, `UX-UI_-Agent/info .txt`, is not present in the reachable history of this `UX-UI` repository. Do not run `git filter-repo`, rewrite this repository's history, or force-push merely because of the legacy incident. The full-history Gitleaks CI gate protects the current repository.
 
-Validation rehearsal (disposable clone only):
-
-```bash
-git clone --mirror <repository-url> phase0-purge-test.git
-cd phase0-purge-test.git
-git for-each-ref --format='%(refname)'
-git filter-repo --path "UX-UI_-Agent/info .txt" --invert-paths --force
-git rev-list --objects --all | grep -F "UX-UI_-Agent/info .txt" # must print nothing
-gitleaks git . --redact --no-banner
-```
-
-Inventory nonstandard ref namespaces before the rewrite. The local rehearsal found a Codex-only capture ref that was not rewritten automatically; disposable internal refs must be removed, while any genuine remote ref must be included in the coordinated rewrite rather than silently dropped.
-
-Never paste the old or replacement value into tickets, chat, CI logs, commands, test fixtures, or documentation.
+If a future scan finds the legacy credential in this repository, stop normal releases and coordinate any history rewrite on a disposable mirror with the repository owner and branch-protection administrators. Do not perform that rewrite from a normal working clone.
 
 ## Rollback
 
-For an application rollback, redeploy the last known-good image digest while retaining the authentication and network controls. Do not restore the raw HTML publication endpoint or the removed credential file. If the history rewrite fails review, discard the disposable rewrite, leave the protected remote unchanged, correct the filter procedure, and repeat. If a coordinated force-push has already happened, use the pre-recorded remote commit ID to perform a second coordinated rewrite; never merge an old clone.
+For an application rollback, redeploy the last known-good image digest while retaining the authentication and network controls. Do not restore the raw HTML publication endpoint or any legacy credential file. If a future coordinated history rewrite fails review, discard the disposable rewrite, leave the protected remote unchanged, correct the filter procedure, and repeat.
 
 ## Security model
 
@@ -36,3 +19,11 @@ For an application rollback, redeploy the last known-good image digest while ret
 - URLs are limited to public HTTP(S) destinations on configured ports. DNS answers, redirects, discovered URLs, and browser requests are checked; Chromium is DNS-pinned and service workers are blocked.
 - TLS validation is on by default. The development override is rejected in production and emits a visible warning locally.
 - Publication deploys an isolated temporary copy of the selected immutable machine report. Local edits are not accepted as HTML and are not published in Phase 0.
+
+## CSRF classification
+
+CSRF protection is not applicable to the Phase 0 mutation API: sensitive endpoints authenticate only through an explicitly supplied `Authorization: Bearer` token. The server does not use ambient browser cookies for authorization. If cookie-backed authentication is introduced later, mutation endpoints must add CSRF protection before release.
+
+## Infrastructure boundary
+
+This repository contains application, Docker, Nginx, and VPS deployment configuration; it does not contain AWS ALB listener or routing configuration. Application bearer authentication does not prove ALB protection. The infrastructure owner must verify ALB protections in AWS before an internet-facing release that uses an ALB.
