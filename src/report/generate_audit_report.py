@@ -570,7 +570,9 @@ def build_check_item(
     rendered_lookup: Dict[str, Dict[str, Any]],
     cleaned_lookup: Dict[str, Dict[str, Any]],
 ) -> Dict[str, Any]:
-    status = clean_text(item.get("status")).upper() or "N/A"
+    status = clean_text(item.get("status")).upper() or "UNKNOWN"
+    outcome = clean_text(item.get("outcome")).lower() or {"TRUE": "pass", "FALSE": "fail", "WARNING": "warning"}.get(status, "unknown")
+    provenance = item.get("provenance") if isinstance(item.get("provenance"), dict) else {}
     confidence = safe_float(item.get("confidence"))
     screenshot_raw = clean_text(item.get("screenshot_path"))
     page_name = clean_text(item.get("page_name"))
@@ -580,6 +582,13 @@ def build_check_item(
         "row": safe_int(item.get("row")),
         "criterion": clean_text(item.get("criterion")),
         "status": status,
+        "outcome": outcome,
+        "applicability": clean_text(item.get("applicability")),
+        "measurement": clean_text(item.get("measurement")),
+        "provenance": provenance,
+        "provenanceStatement": "Site-wide conclusion based on the audited sample." if provenance.get("status") == "site_wide" else ("Evidence provenance is unresolved; this result is not attributed to a page." if provenance.get("status") == "unresolved" else ""),
+        "ruleId": clean_text(item.get("ruleId")),
+        "findingId": clean_text(item.get("findingId")),
         "confidence": round(confidence, 2),
         "confidencePercent": int(round(confidence * 100)),
         "severity": derive_severity(confidence) if status == "FALSE" else "info",
@@ -610,8 +619,9 @@ def build_sheet_summary(
         for item in sheet_payload.get("results", [])
     ]
     passed = [item for item in raw_items if item["status"] == "TRUE"]
-    failed = [item for item in raw_items if item["status"] == "FALSE"]
-    na_items = [item for item in raw_items if item["status"] not in {"TRUE", "FALSE"}]
+    failed = [item for item in raw_items if item["outcome"] == "fail"]
+    warnings = [item for item in raw_items if item["outcome"] == "warning"]
+    na_items = [item for item in raw_items if item["outcome"] == "unknown" or item["applicability"] == "not_applicable"]
     denominator = len(passed) + len(failed)
     score = int(round((len(passed) / denominator) * 100)) if denominator else 0
 
@@ -624,9 +634,10 @@ def build_sheet_summary(
         "total": len(raw_items),
         "passed": len(passed),
         "failed": len(failed),
+        "warnings": len(warnings),
         "na": len(na_items),
         "score": score,
-        "findings": failed,
+        "findings": [*failed, *warnings],
         "strengths": passed,
         "openQuestions": na_items,
     }

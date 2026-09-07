@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.audit.workspace import atomic_write_json
+from src.audit.result_semantics import build_page_index as semantic_page_index, enrich_result
 from .common import AuditContext, clean_text
 from .content_checks import run as run_content_checks
 from .feedback_checks import run as run_feedback_checks
@@ -117,16 +118,22 @@ def normalize_status(raw_status: Any) -> str:
 
     true_values = {"TRUE", "T", "YES", "Y", "OK", "VALID", "PASS", "PASSED", "1"}
     false_values = {"FALSE", "F", "NO", "N", "X", "FAIL", "FAILED", "0"}
-    na_values = {"", "N/A", "NA", "NOT APPLICABLE", "NONE", "NULL", "UNKNOWN"}
+    warning_values = {"WARNING", "WARN"}
+    unknown_values = {"", "UNKNOWN", "NONE", "NULL"}
+    na_values = {"N/A", "NA", "NOT APPLICABLE"}
 
     if value in true_values:
         return "TRUE"
     if value in false_values:
         return "FALSE"
+    if value in warning_values:
+        return "WARNING"
+    if value in unknown_values:
+        return "UNKNOWN"
     if value in na_values:
         return "N/A"
 
-    return "N/A"
+    return "UNKNOWN"
 
 
 def confidence_band(confidence: Any) -> str:
@@ -286,7 +293,7 @@ def enrich_result_with_provenance(
 
 
 def summarize_sheet(results: List[Dict[str, Any]]) -> Dict[str, int]:
-    counts = {"TRUE": 0, "FALSE": 0, "N/A": 0, "total": 0}
+    counts = {"TRUE": 0, "FALSE": 0, "WARNING": 0, "UNKNOWN": 0, "N/A": 0, "total": 0}
     for item in results:
         status = normalize_status(item.get("status"))
         counts[status] = counts.get(status, 0) + 1
@@ -298,9 +305,11 @@ def partner_status_to_sheet_status(raw_status: Any) -> str:
     normalized = str(raw_status or "").strip().lower()
     if normalized == "pass":
         return "TRUE"
-    if normalized in {"fail", "warning"}:
+    if normalized == "fail":
         return "FALSE"
-    return "N/A"
+    if normalized == "warning":
+        return "WARNING"
+    return "UNKNOWN"
 
 
 def partner_confidence_to_float(raw_confidence: Any, fallback_score: Any = None) -> float:
@@ -401,7 +410,7 @@ def synthesize_partner_result(
             "sheet": sheet_name,
             "row": spec["row"],
             "criterion": spec["criterion"],
-            "status": "N/A",
+            "status": "UNKNOWN",
             "confidence": 0.25,
             "rationale": "No result was generated for this criterion by the partner check module.",
             "evidence": [],
@@ -547,17 +556,24 @@ def generate_checks_schema(
 
 
 def enrich_checks_schema(checks_data: Dict[str, Any], cleaned_data: Dict[str, Any]) -> Dict[str, Any]:
-    page_index = build_page_index(cleaned_data)
+    page_index = semantic_page_index(cleaned_data)
     pages_audited = checks_data.get("pagesAudited", [])
 
     out = dict(checks_data)
-    out["version"] = max(int(out.get("version", 1)), 2)
+    out["version"] = max(int(out.get("version", 1)), 3)
     out["schema"] = {
         "result_fields": [
             "sheet",
             "row",
             "criterion",
             "status",
+            "rawStatus",
+            "outcome",
+            "measurement",
+            "provenance",
+            "ruleId",
+            "findingId",
+            "evidenceIds",
             "confidence",
             "confidence_band",
             "needs_review",
@@ -579,13 +595,27 @@ def enrich_checks_schema(checks_data: Dict[str, Any], cleaned_data: Dict[str, An
     for sheet_name, sheet_payload in sheets.items():
         raw_results = sheet_payload.get("results", [])
         enriched_results = [
-            enrich_result_with_provenance(item, pages_audited, page_index)
+            enrich_result(item, page_index)
             for item in raw_results
         ]
         sheet_payload["results"] = enriched_results
         sheet_payload["summary"] = summarize_sheet(enriched_results)
 
     return out
+
+
+def evidence_manifest(checks_data: Dict[str, Any]) -> Dict[str, Any]:
+    """A job-local, reference-only manifest suitable for report consumers."""
+    findings = []
+    for sheet_name, sheet in (checks_data.get("sheets") or {}).items():
+        for item in sheet.get("results") or []:
+            findings.append({
+                "findingId": item.get("findingId"), "ruleId": item.get("ruleId"),
+                "outcome": item.get("outcome"), "applicability": item.get("applicability"),
+                "measurement": item.get("measurement"), "provenance": item.get("provenance"),
+                "evidenceIds": item.get("evidenceIds", []), "sheet": sheet_name, "row": item.get("row"),
+            })
+    return {"schemaVersion": 2, "findings": findings}
 
 
 def main() -> None:
@@ -595,6 +625,7 @@ def main() -> None:
     parser.add_argument("--rendered", help="Path to rendered_ui_extraction.json. When provided, checks are generated before enrichment.")
     parser.add_argument("--results", help="Optional path to audit-results_*.json used by runtime-oriented partner checks.")
     parser.add_argument("--output", required=True, help="Path to enriched checks output json")
+    parser.add_argument("--evidence-manifest", help="Optional job-local evidence manifest output path")
     args = parser.parse_args()
 
     cleaned_path = Path(args.cleaned)
@@ -625,6 +656,8 @@ def main() -> None:
 
     enriched = enrich_checks_schema(checks_data, cleaned_data)
     save_json(output_path, enriched)
+    if args.evidence_manifest:
+        save_json(Path(args.evidence_manifest), evidence_manifest(enriched))
 
     print(f"Enriched checks written to: {output_path}")
 

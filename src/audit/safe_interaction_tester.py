@@ -1,5 +1,6 @@
 import asyncio
 import time
+from hashlib import sha256
 from urllib.parse import urljoin
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -89,9 +90,9 @@ def should_skip_safe_clickable(clickable, page_url, config):
 
 
 def should_capture_interaction_screenshot(outcome_type, config):
-    # Skip screenshots for failed interactions to avoid low-value captures.
-    if outcome_type == "error":
-        return False
+    # Failure captures are first-class evidence.
+    if outcome_type in {"error", "not_found", "no_effect", "blocked", "navigation_failure", "popup_failure", "timeout"}:
+        return True
 
     if config["interactionTesting"].get("captureAllInteractionScreenshots"):
         return True
@@ -252,6 +253,7 @@ async def maybe_capture_interaction_screenshot(
 
 def build_skipped_result(clickable, page_url, reason, interaction_sequence):
     return {
+        "interactionId": f"interaction_{sha256((page_url + '|' + build_fingerprint(clickable)).encode()).hexdigest()[:16]}",
         "interactionSequence": interaction_sequence,
         "clickableIndex": clickable["index"],
         "clickableText": clickable.get("text"),
@@ -269,6 +271,9 @@ def build_skipped_result(clickable, page_url, reason, interaction_sequence):
         "domChanged": False,
         "screenshotPath": None,
         "error": None,
+        "measurement": "not_measured",
+        "beforeState": None,
+        "sideEffects": {"networkWritesBlocked": True, "redacted": True},
     }
 
 
@@ -299,6 +304,14 @@ async def test_safe_clickables(*, context, page_info, classified_clickables, con
 
     test_page = await context.new_page()
 
+    async def interaction_request_guard(route, request):
+        if request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            await route.abort("blockedbyclient")
+            return
+        await route.continue_()
+
+    await test_page.route("**/*", interaction_request_guard)
+
     try:
         for interaction_sequence, clickable in enumerate(safe_clickables, start=1):
             skip_reason = should_skip_safe_clickable(clickable, page_info["url"], config)
@@ -316,6 +329,7 @@ async def test_safe_clickables(*, context, page_info, classified_clickables, con
                 continue
 
             interaction_result = {
+                "interactionId": f"interaction_{sha256((page_info['url'] + '|' + build_fingerprint(clickable)).encode()).hexdigest()[:16]}",
                 "interactionSequence": interaction_sequence,
                 "clickableIndex": clickable["index"],
                 "clickableText": clickable.get("text"),
@@ -335,6 +349,9 @@ async def test_safe_clickables(*, context, page_info, classified_clickables, con
                 "settledDurationMs": None,
                 "screenshotPath": None,
                 "error": None,
+                "measurement": "measured",
+                "beforeState": None,
+                "sideEffects": {"networkWritesBlocked": True, "redacted": True},
             }
 
             popup_page = None
@@ -358,6 +375,7 @@ async def test_safe_clickables(*, context, page_info, classified_clickables, con
 
                 before_url = test_page.url
                 before_state = await capture_page_state(test_page)
+                interaction_result["beforeState"] = before_state
                 dialog_tracker = attach_dialog_tracker(test_page)
 
                 fresh_clickables = await detect_clickables(test_page, config)
@@ -446,9 +464,14 @@ async def test_safe_clickables(*, context, page_info, classified_clickables, con
                 )
 
                 if popup_page:
-                    interaction_result["outcomeType"] = "popup"
-                    interaction_result["success"] = True
-                    interaction_result["reason"] = "interaction opened a new tab or window"
+                    if get_origin_safe(popup_page.url) != get_origin_safe(page_info["url"]):
+                        interaction_result["outcomeType"] = "popup_failure"
+                        interaction_result["success"] = False
+                        interaction_result["reason"] = "external popup blocked and closed"
+                    else:
+                        interaction_result["outcomeType"] = "popup"
+                        interaction_result["success"] = True
+                        interaction_result["reason"] = "interaction opened a same-origin new tab or window"
                 elif normalized_before_url and normalized_after_url and normalized_before_url != normalized_after_url:
                     interaction_result["outcomeType"] = "navigation"
                     interaction_result["success"] = True
@@ -479,8 +502,9 @@ async def test_safe_clickables(*, context, page_info, classified_clickables, con
                 if interaction_result["screenshotPath"]:
                     interaction_screenshots_created += 1
             except Exception as error:
-                interaction_result["outcomeType"] = "error"
+                interaction_result["outcomeType"] = "timeout" if isinstance(error, PlaywrightTimeoutError) else "error"
                 interaction_result["success"] = False
+                interaction_result["measurement"] = "collection_failed"
                 interaction_result["error"] = str(error)
                 interaction_result["reason"] = "interaction threw an error"
                 screenshot_source_page = popup_page or test_page

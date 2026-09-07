@@ -51,7 +51,16 @@ def build_search_blob(clickable):
 
 
 def is_likely_safe_anchor(clickable):
-    return clickable.get("tag") == "a" and bool(clickable.get("href"))
+    href = str(clickable.get("href") or "").strip()
+    # Safe is a structural property: a normal same-context GET navigation. Text
+    # keywords are only advisory and must never make an action executable.
+    return (
+        clickable.get("tag") == "a"
+        and href
+        and not href.startswith(("#", "javascript:", "mailto:", "tel:"))
+        and str(clickable.get("target") or "").lower() not in {"_blank", "_parent", "_top"}
+        and not clickable.get("download")
+    )
 
 
 def classify_clickable(clickable, config):
@@ -78,23 +87,16 @@ def classify_clickable(clickable, config):
             "reason": f"matched forbidden href keyword: {forbidden_href_keyword}",
         }
 
-    safe_keyword = contains_any_keyword(search_blob, config["classification"]["safeKeywords"])
-    if safe_keyword:
-        return {
-            "classification": "safe",
-            "reason": f"matched safe keyword: {safe_keyword}",
-        }
-
     if is_likely_safe_anchor(clickable):
         return {
             "classification": "safe",
-            "reason": "anchor with href and no forbidden signals",
+            "reason": "structural same-context anchor navigation",
         }
 
     if clickable.get("tag") == "button" or clickable.get("role") == "button":
         return {
             "classification": "unknown",
-            "reason": "button-like element without clear safe/forbidden signal",
+            "reason": "default deny: button-like controls require explicit safe structural category",
         }
 
     return {

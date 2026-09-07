@@ -243,3 +243,6 @@ docker run --rm -p 10000:10000 \
 The health endpoint does not contact external services. The image runs as the unprivileged `auditor` user and pins Playwright 1.43.0 to the matching Playwright base image; Vercel CLI is pinned to 58.0.0. `requirements.txt` is a compatibility export and must remain aligned with the lock.
 
 See [docs/SECURITY_OPERATIONS.md](docs/SECURITY_OPERATIONS.md) for authentication, SSRF, publication, credential rotation/history cleanup, and rollback procedures. The release remains blocked until the repository owner revokes/rotates the exposed tunnel credential and completes the coordinated remote-history purge.
+# Phase 2B evidence semantics
+
+Generated checks retain `outcome`, `applicability`, `measurement`, structured `provenance`, and stable rule/finding/evidence identifiers. `N/A` and TRUE/FALSE labels are legacy workbook-export values only. Use `--evidence-manifest <job-workspace>/audit/evidence_manifest.json` with `run_sheet_checks` to write the job-local manifest atomically.

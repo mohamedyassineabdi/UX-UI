@@ -237,6 +237,9 @@ def build_evidence_sheet(wb, checks_data: dict) -> None:
         elif normalized_status == "FALSE":
             status_cell.fill = FALSE_FILL
             status_cell.font = FALSE_FONT
+        elif normalized_status == "WARNING":
+            status_cell.fill = LOW_CONF_FILL
+            status_cell.font = LOW_CONF_FONT
         else:
             status_cell.fill = NA_FILL
             status_cell.font = NA_FONT

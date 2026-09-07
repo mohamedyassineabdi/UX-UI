@@ -157,6 +157,10 @@ class AuditWorkspace:
         return self.coverage_dir / "manifest.json"
 
     @property
+    def evidence_manifest(self) -> Path:
+        return self.audit_dir / "evidence_manifest.json"
+
+    @property
     def run_config(self) -> Path:
         return self.input_dir / "run_config.json"
 
@@ -182,7 +186,7 @@ class AuditWorkspace:
         atomic_write_json(
             self.manifest,
             {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "jobId": self.job_id,
                 "auditType": "website",
                 "mode": mode,
@@ -198,6 +202,7 @@ class AuditWorkspace:
                     "report": str(self.report.relative_to(self.root)),
                     "publication": str(self.publication.relative_to(self.root)),
                     "coverageManifest": str(self.coverage_manifest.relative_to(self.root)),
+                    "evidenceManifest": str(self.evidence_manifest.relative_to(self.root)),
                 },
             },
         )
