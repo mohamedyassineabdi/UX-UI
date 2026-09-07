@@ -17,6 +17,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from src.audit.page_runner import run_page_audit
+from src.audit.lighthouse_runner import run_lighthouse
 from src.audit.page_visit_helpers import dismiss_cookie_banners, extract_basic_page_info, wait_for_page_ready
 from src.audit.html_postprecess import clean_html_output
 from src.audit.rendered_css_extractor import build_rendered_ui_output
@@ -768,6 +769,17 @@ async def async_main(job_id: str):
                 await browser.close()
 
     finished_at = datetime.now()
+    # Lighthouse is a separate bounded lab measurement.  The URL is validated
+    # again inside its runner so redirects/late page state cannot bypass Phase 0.
+    for page_result in page_results:
+        if not isinstance(page_result, dict) or page_result.get("status") != "success":
+            continue
+        page_id = str(page_result.get("pageId") or "")
+        audit_url = str(page_result.get("finalUrl") or page_result.get("url") or "")
+        page_result["lighthouse"] = run_lighthouse(
+            url=audit_url, page_id=page_id, artifacts_dir=workspace.lighthouse_dir,
+            timeout_seconds=int(os.getenv("UX_LIGHTHOUSE_TIMEOUT_SEC", "120")),
+        )
     run_summary = summarize_run(page_results)
     manifest = coverage_manifest(workspace.job_id, coverage_pages, robots_policy=((raw_input.get("extra") or {}).get("robotsPolicy") if isinstance(raw_input, dict) else "respect") or "respect", discovery={"sources": ["homepage", "navigation", "footer", "sitemap"], "robots": (raw_input.get("extra") or {}).get("robots_txt", "") if isinstance(raw_input, dict) else ""}, threshold=threshold)
     atomic_write_json(workspace.coverage_manifest, manifest)
@@ -819,6 +831,11 @@ async def async_main(job_id: str):
 
     results_file_path = workspace.audit_results
     atomic_write_json(results_file_path, output)
+    for page_result in page_results:
+        axe = page_result.get("axe") if isinstance(page_result, dict) else None
+        page_id = str((axe or {}).get("pageId") or page_result.get("pageId") or "") if isinstance(page_result, dict) else ""
+        if isinstance(axe, dict) and page_id:
+            atomic_write_json(workspace.accessibility_dir / f"{page_id}.json", axe)
 
     html_output = build_html_output(page_results)
     html_file_path = workspace.html_extraction

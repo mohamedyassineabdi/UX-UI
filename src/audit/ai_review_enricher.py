@@ -10,8 +10,27 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Set, Tuple
 from dotenv import load_dotenv
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.audit.ai_review_client import AIReviewClient
+
+
+class _EnrichedReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reviewed_status: str
+    reviewed_confidence: float = Field(ge=0, le=1)
+    evidence_summary: str = Field(max_length=1200)
+    key_insight: str = Field(max_length=1200)
+    ux_impact: str = Field(max_length=1200)
+    recommended_fix: str = Field(max_length=1200)
+    severity_hint: str
+    needs_human_review: bool
+    contradiction_flag: bool
+    recurrence_candidate_label: str = Field(max_length=120)
+    review_note: str = Field(max_length=1200)
+    def model_post_init(self, __context: Any) -> None:
+        if self.reviewed_status not in {"True", "False", "N/A"} or self.severity_hint not in {"low", "medium", "high"}:
+            raise ValueError("invalid enrichment enum")
 
 
 SYSTEM_PROMPT = """
@@ -921,7 +940,10 @@ def enrich_checks(input_path: str, output_path: str) -> None:
         else:
             user_payload = _build_user_payload(row)
             try:
-                ai_raw = client.review_json(SYSTEM_PROMPT, user_payload, temperature=0.1)
+                envelope = client.review_validated_json(SYSTEM_PROMPT, user_payload, schema=_EnrichedReview, prompt_version="audit_enrichment_v2", temperature=0.1)
+                if envelope["status"] != "completed":
+                    raise ValueError("AI enrichment schema validation failed")
+                ai_raw = envelope["result"]
                 ai = _sanitize_ai_result(ai_raw, row)
             except Exception as exc:
                 ai = _default_ai_result(row, error_message=f"AI review failed: {exc}")

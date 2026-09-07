@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from pydantic import BaseModel, ConfigDict, Field
 
 from figma_audit.config import (
     OLLAMA_API_HOST,
@@ -14,9 +15,25 @@ from figma_audit.config import (
 )
 from figma_audit.models.criteria import UxUiCriterion
 from figma_audit.utils.io import load_json, save_json
+from src.audit.vlm_schema import validated_machine_response
 
 
 CLIENT_COPY_KEYS = ("title", "what_is_wrong", "why_it_matters", "recommended_fix")
+REPORT_POLISH_PROMPT_VERSION = "figma_report_polish_v2"
+
+
+class _PolishedIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=160)
+    title: str = Field(min_length=1, max_length=80)
+    what_is_wrong: str = Field(min_length=1, max_length=1100)
+    why_it_matters: str = Field(min_length=1, max_length=1100)
+    recommended_fix: str = Field(min_length=1, max_length=1100)
+
+
+class _PolishedResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    issues: list[_PolishedIssue] = Field(min_length=1, max_length=200)
 
 
 class ReportPolishError(RuntimeError):
@@ -75,27 +92,6 @@ def _compact_issue_payload(
         "value_communication_checks": evidence.get("value_communication_checks"),
         "visual_search_checks": evidence.get("visual_search_checks"),
     }
-
-
-def _extract_json_object(text: str) -> dict[str, Any]:
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        stripped = stripped.strip("`")
-        if stripped.lower().startswith("json"):
-            stripped = stripped[4:].strip()
-
-    try:
-        parsed = json.loads(stripped)
-    except json.JSONDecodeError:
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start < 0 or end <= start:
-            raise
-        parsed = json.loads(stripped[start : end + 1])
-
-    if not isinstance(parsed, dict):
-        raise ValueError("Polish response must be a JSON object.")
-    return parsed
 
 
 def _normalize_polished_copy(
@@ -205,7 +201,10 @@ def polish_report_copy_with_ollama(
     if callable(log):
         log(f"Polishing report copy with Ollama Cloud model {OLLAMA_REPORT_MODEL}...")
 
-    try:
+    def fetch(correction: str | None) -> str:
+        payload = dict(user_prompt)
+        if correction:
+            payload["schema_correction"] = correction
         response = requests.post(
             f"{OLLAMA_API_HOST}/api/chat",
             headers={
@@ -216,7 +215,7 @@ def polish_report_copy_with_ollama(
                 "model": OLLAMA_REPORT_MODEL,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_prompt, ensure_ascii=False)},
+                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
                 ],
                 "stream": False,
                 "format": "json",
@@ -224,29 +223,16 @@ def polish_report_copy_with_ollama(
             },
             timeout=OLLAMA_REQUEST_TIMEOUT,
         )
-    except requests.RequestException as exc:
-        raise ReportPolishError(f"Ollama Cloud request failed: {exc}") from exc
-
-    if response.status_code >= 400:
-        raise ReportPolishError(
-            f"Ollama Cloud request failed with HTTP {response.status_code}: {response.text[:300]}"
-        )
-
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise ReportPolishError("Ollama Cloud response was not valid JSON.") from exc
-
-    message = payload.get("message") if isinstance(payload, dict) else None
-    content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, str) or not content.strip():
-        raise ReportPolishError("Ollama Cloud response did not contain message content.")
-
-    try:
-        parsed = _extract_json_object(content)
-        polished = _normalize_polished_copy(issues=issues, parsed=parsed)
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise ReportPolishError(f"Ollama Cloud response had an unusable format: {exc}") from exc
+        response.raise_for_status()
+        response_payload = response.json()
+        content = (response_payload.get("message") or {}).get("content") if isinstance(response_payload, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Ollama Cloud response did not contain message content.")
+        return content
+    validated = validated_machine_response(fetch, schema=_PolishedResponse, provider="ollama", model=OLLAMA_REPORT_MODEL, prompt_version=REPORT_POLISH_PROMPT_VERSION)
+    if validated["status"] != "completed":
+        raise ReportPolishError("Ollama Cloud response failed strict schema validation.")
+    polished = _normalize_polished_copy(issues=issues, parsed=validated["result"])
 
     if not polished:
         raise ReportPolishError("Ollama Cloud returned no usable issue copy.")

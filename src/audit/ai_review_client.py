@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import os
 import random
-import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
+
+from pydantic import BaseModel
+from src.audit.vlm_schema import validated_machine_response
 
 import requests
 from dotenv import load_dotenv
@@ -157,26 +159,24 @@ class AIReviewClient:
         self.session = requests.Session()
         self._last_request_ts = 0.0
 
-    def review_json(
-        self,
-        system_prompt: str,
-        user_payload: Dict[str, Any],
-        temperature: float = 0.1,
-    ) -> Dict[str, Any]:
-        if self.config.request_spacing_seconds > 0:
-            self._respect_request_spacing()
-
-        if self.config.backend == "ollama":
-            text = self._call_ollama(system_prompt, user_payload, temperature)
-        elif self.config.backend in {"openai", "groq"}:
-            text = self._call_openai_compatible(system_prompt, user_payload, temperature)
-        else:
+    def review_validated_json(
+        self, system_prompt: str, user_payload: Dict[str, Any], *, schema: Type[BaseModel],
+        prompt_version: str, temperature: float = 0.1,
+    ) -> dict[str, Any]:
+        """Validated machine gateway; network retries remain in this client."""
+        def fetch(correction: str | None) -> str:
+            payload = dict(user_payload)
+            if correction:
+                payload["schema_correction"] = correction
+            if self.config.request_spacing_seconds > 0:
+                self._respect_request_spacing()
+            if self.config.backend == "ollama":
+                return self._call_ollama(system_prompt, payload, temperature)
+            if self.config.backend in {"openai", "groq"}:
+                return self._call_openai_compatible(system_prompt, payload, temperature)
             raise ValueError(f"Unsupported AI_REVIEW_BACKEND: {self.config.backend}")
-
-        parsed = self._extract_json(text)
-        if not isinstance(parsed, dict):
-            raise ValueError("Model did not return a JSON object.")
-        return parsed
+        return validated_machine_response(fetch, schema=schema, provider=self.config.backend,
+                                          model=self.config.model, prompt_version=prompt_version)
 
     def _respect_request_spacing(self) -> None:
         now = time.time()
@@ -322,26 +322,3 @@ class AIReviewClient:
             retry_after += random.uniform(0.0, 0.5)
 
         time.sleep(max(0.0, retry_after))
-
-    @staticmethod
-    def _extract_json(text: str) -> Any:
-        text = text.strip()
-
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            pass
-
-        fenced = re.search(r"```json\s*(\{.*\}|\[.*\])\s*```", text, re.DOTALL | re.IGNORECASE)
-        if fenced:
-            return json.loads(fenced.group(1))
-
-        first_obj = re.search(r"(\{.*\})", text, re.DOTALL)
-        if first_obj:
-            return json.loads(first_obj.group(1))
-
-        first_array = re.search(r"(\[.*\])", text, re.DOTALL)
-        if first_array:
-            return json.loads(first_array.group(1))
-
-        raise ValueError(f"Could not parse JSON from model output: {text[:500]}")

@@ -125,7 +125,12 @@ def deduplicate_findings(findings: Iterable[dict[str, Any]]) -> list[dict[str, A
         groups[_fingerprint(finding)].append(dict(finding))
     merged = []
     for fingerprint in sorted(groups):
-        items = sorted(groups[fingerprint], key=lambda item: (str(item.get("findingId") or ""), str(item.get("source") or "")))
+        # A standards-automated confirmation is the evidence lead for one
+        # logical defect; heuristics and VLM corroboration are retained below.
+        items = sorted(groups[fingerprint], key=lambda item: (
+            0 if item.get("measurementClass") == "standards_automated" else 1,
+            str(item.get("findingId") or ""), str(item.get("source") or ""),
+        ))
         primary = dict(items[0])
         primary["deduplicationId"] = f"defect_{fingerprint}"
         primary["sources"] = sorted({str(i.get("source") or i.get("source_type") or "deterministic") for i in items})

@@ -1,0 +1,1 @@
+{"issues":[{"id":"fixture-unnamed-button","expectedDetector":"axe","expectedRule":"button-name"},{"id":"fixture-unlabeled-input","expectedDetector":"axe","expectedRule":"label"},{"id":"fixture-small-target","expectedDetector":"custom","expectedRule":"target-size-24"}]}

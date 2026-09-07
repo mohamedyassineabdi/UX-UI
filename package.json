@@ -2,6 +2,10 @@
   "name": "ux-ui-auditor-pipeline",
   "version": "1.0.0",
   "private": true,
+  "devDependencies": {
+    "axe-core": "4.11.1",
+    "lighthouse": "13.4.1"
+  },
   "scripts": {
     "scan": "python scripts/run_pipeline.py",
     "scan:gtm": "python scripts/run_pipeline.py --mode gtm",

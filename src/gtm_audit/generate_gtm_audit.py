@@ -9,6 +9,8 @@ from typing import Any, Dict, Iterable, List, Optional
 from urllib.parse import urlparse
 
 from src.audit.workspace import atomic_write_json
+from src.audit.measurement import measurement_metadata, valid_accessible_name
+from src.audit.axe_runner import axe_findings
 from .common import (
     AXIS_DEFINITIONS,
     AXIS_IMPACT,
@@ -309,12 +311,12 @@ def _wcag_finding(
 ) -> Dict[str, Any]:
     page_name = clean_text(page.get("name")) or "Audited page"
     page_url = clean_text(page.get("finalUrl") or page.get("url"))
-    criterion = _wcag_title(sc, title)
+    criterion = f"Accessibility heuristic: possible {title} (related WCAG 2.2 SC {sc})"
     return {
         "title": criterion,
         "pageName": page_name,
         "pageUrl": page_url,
-        "sourceSheet": "WCAG 2.2 Runtime",
+        "sourceSheet": "Accessibility runtime heuristics",
         "severity": severity,
         "confidence": confidence,
         "evidence": "; ".join(evidence)[:240],
@@ -325,12 +327,13 @@ def _wcag_finding(
         "screenshotPath": screenshot_path,
         "visualRegion": None,
         "evidenceBundle": {
-            "source": "wcag_2_2_runtime",
+            "source": "custom_accessibility_heuristic",
             "criterion": criterion,
             "successCriterion": sc,
             "raw": raw or {},
         },
         "wcagCriterion": sc,
+        **measurement_metadata("rendered_runtime_heuristic", "heuristic_custom", limitations=["Not a confirmed WCAG conformance result; manual review or standards automation is required."]),
     }
 
 
@@ -405,16 +408,7 @@ def _keyboard_snapshot_for_page(page: Dict[str, Any], results_data: Optional[Dic
 
 
 def _component_label(component: Dict[str, Any]) -> str:
-    return clean_text(
-        component.get("accessibleName")
-        or component.get("ariaLabel")
-        or component.get("label")
-        or component.get("text")
-        or component.get("href")
-        or component.get("id")
-        or component.get("xpathHint")
-        or component.get("tag")
-    )
+    return valid_accessible_name(component)
 
 
 def wcag_findings_from_runtime(
@@ -571,12 +565,12 @@ def wcag_findings_from_runtime(
                 findings.append(
                     _wcag_finding(
                         sc="2.4.3",
-                        title="Keyboard focus order does not cover enough interactive controls",
+                        title="Some visible interactive controls were not reached by the keyboard probe",
                         page=page_ref,
                         screenshot_path=screenshot_path,
                         severity="medium",
                         evidence=[f"Keyboard coverage {coverage:.1f}%", f"{focused_count}/{interactive_count} controls reached", *samples[:2]],
-                        explanation=f"On {page_name}, the keyboard probe reached {focused_count} of {interactive_count} visible interactive controls by Tab.",
+                        explanation=f"On {page_name}, the keyboard probe reached {focused_count} of {interactive_count} visible interactive controls by Tab. This records reachability only; logical focus order requires human review.",
                         why_it_matters=f"If users cannot tab to every relevant control on {page_name}, navigation and form completion become dependent on a mouse or touch input.",
                         recommendation="Audit the tab order, remove focusable hidden controls, and make every visible custom control reachable in a logical sequence.",
                         raw=keyboard,
@@ -641,7 +635,11 @@ def build_profile(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
     p95_interaction_settle_ms = safe_float(summary.get("p95InteractionSettleMs"), 0.0)
     performance_profiles = page_performance_profiles(cleaned_pages)
     performance_score = mean([item["score"] for item in performance_profiles], default=0.0) if performance_profiles else None
-    wcag_findings = wcag_findings_from_runtime(rendered_data, cleaned_pages, results_data)
+    heuristic_findings = wcag_findings_from_runtime(rendered_data, cleaned_pages, results_data)
+    axe_results = [page.get("axe") for page in (results_data or {}).get("pages", []) if isinstance(page, dict) and isinstance(page.get("axe"), dict)]
+    standards_findings = [finding for result in axe_results for finding in axe_findings(result)]
+    # Standards evidence leads; custom observations remain visible but distinct.
+    wcag_findings = [*standards_findings, *heuristic_findings]
     host = urlparse(clean_text(website_menu.get("homepage"))).netloc or clean_text(website_menu.get("homepage"))
     if host.startswith("www."):
         host = host[4:]
@@ -687,6 +685,8 @@ def build_profile(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
         },
         "performance": performance_profiles,
         "wcagFindings": wcag_findings,
+        "standardsAccessibilityFindings": standards_findings,
+        "customAccessibilityObservations": heuristic_findings,
         "sheetScores": {sheet_name: sheet_score((payload or {}).get("summary") or {}) for sheet_name, payload in (checks_data.get("sheets") or {}).items()},
         "homepageScreenshot": clean_text((meta.get("screenshotPaths") or {}).get("page")),
     }

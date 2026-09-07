@@ -2,7 +2,26 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from src.audit.ai_review_client import AIReviewClient
+
+
+class _CriterionReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    criterion: str = Field(min_length=1, max_length=160)
+    final_verdict: str
+    confidence: str
+    agree_with_deterministic: bool
+    reason: str = Field(max_length=1000)
+    key_signals: list[str] = Field(max_length=20)
+    recommended_adjustment: str = Field(max_length=1000)
+    suspicious_metrics: list[str] = Field(max_length=20)
+    evidence_quality: str
+    needs_manual_review: bool
+    def model_post_init(self, __context: Any) -> None:
+        if self.final_verdict not in {"pass", "warning", "fail", "not_applicable"} or self.confidence not in {"low", "medium", "high"} or self.evidence_quality not in {"low", "medium", "high"}:
+            raise ValueError("invalid audit review enum")
 
 
 _AI_CLIENT: AIReviewClient | None = None
@@ -108,7 +127,7 @@ def review_page_criterion_with_ai(
     fallback_status = deterministic_result.get("status", "warning")
 
     try:
-        response = _client().review_json(
+        envelope = _client().review_validated_json(
             system_prompt=_build_system_prompt(),
             user_payload=_build_user_payload(
                 criterion=criterion,
@@ -119,8 +138,12 @@ def review_page_criterion_with_ai(
                 page_metrics=page_metrics,
                 extracted_summary=extracted_summary,
             ),
+            schema=_CriterionReview, prompt_version="audit_criterion_review_v2",
             temperature=0.1,
         )
+        if envelope["status"] != "completed":
+            raise ValueError("AI review schema validation failed")
+        response = envelope["result"]
     except Exception as exc:
         return {
             "criterion": criterion,

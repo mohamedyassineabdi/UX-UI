@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from src.audit.ai_review_client import AIReviewClient
 
 from .common import AXIS_DEFINITIONS, AXIS_IMPACT, AXIS_USER_IMPACT, axis_prompt_contract, clamp, clean_text, mean, score_to_severity
-from .vision_client import run_gtm_vision_review
+from .vision_client import _VisionResult, run_gtm_vision_review
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -419,9 +419,10 @@ Return strict JSON only matching the requested schema.
     try:
         client = AIReviewClient()
         client.config.timeout = min(client.config.timeout, 90)
-        refined = client.review_json(system_prompt=system_prompt, user_payload=user_payload, temperature=0.05)
-        if not isinstance(refined, dict):
-            raise ValueError("Text refinement did not return a JSON object.")
+        envelope = client.review_validated_json(system_prompt=system_prompt, user_payload=user_payload, schema=_VisionResult, prompt_version="screenshot_text_refinement_v2", temperature=0.05)
+        if envelope["status"] != "completed":
+            raise ValueError("Text refinement failed strict schema validation.")
+        refined = envelope["result"]
         return {
             "enabled": True,
             "model": client.config.model,

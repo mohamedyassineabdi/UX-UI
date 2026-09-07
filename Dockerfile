@@ -18,10 +18,11 @@ COPY --from=node_runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock package.json package-lock.json ./
 
 RUN python -m pip install --no-cache-dir uv==0.9.28 \
     && UV_PYTHON_DOWNLOADS=never uv sync --python /usr/bin/python3 --frozen --no-dev --no-install-project \
+    && npm ci --omit=optional --ignore-scripts \
     && npm install -g vercel@58.0.0 \
     && node --version \
     && vercel --version

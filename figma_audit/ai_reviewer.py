@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
+from pydantic import BaseModel, ConfigDict, Field
 
 from figma_audit.config import (
     OLLAMA_AI_REVIEW_MODEL,
@@ -13,8 +14,9 @@ from figma_audit.config import (
     OLLAMA_REQUEST_TIMEOUT,
 )
 from figma_audit.models.criteria import UxUiCriterion
-from figma_audit.report_polisher import ReportPolishError, _extract_json_object, _safe_text
+from figma_audit.report_polisher import ReportPolishError, _safe_text
 from figma_audit.utils.io import load_json, save_json
+from src.audit.vlm_schema import validated_machine_response
 
 
 AI_REVIEW_AXES = {
@@ -23,6 +25,25 @@ AI_REVIEW_AXES = {
     "content_microcopy",
 }
 AI_REVIEW_DECISIONS = {"support", "soften", "reject"}
+AI_REVIEW_PROMPT_VERSION = "figma_issue_review_v2"
+
+
+class _ReviewItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=160)
+    decision: str
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(min_length=1, max_length=420)
+    client_reframe: str = Field(max_length=700)
+    recommended_focus: str = Field(max_length=420)
+    def model_post_init(self, __context: Any) -> None:
+        if self.decision not in AI_REVIEW_DECISIONS:
+            raise ValueError("invalid review decision")
+
+
+class _ReviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reviews: list[_ReviewItem] = Field(min_length=1, max_length=200)
 
 
 def _subdetector(evidence: dict[str, object]) -> object:
@@ -187,7 +208,10 @@ def review_issues_with_ollama(
     if callable(log):
         log(f"Reviewing judgment-heavy criteria with Ollama model {OLLAMA_AI_REVIEW_MODEL}...")
 
-    try:
+    def fetch(correction: str | None) -> str:
+        payload = dict(user_prompt)
+        if correction:
+            payload["schema_correction"] = correction
         response = requests.post(
             f"{OLLAMA_API_HOST}/api/chat",
             headers={
@@ -198,7 +222,7 @@ def review_issues_with_ollama(
                 "model": OLLAMA_AI_REVIEW_MODEL,
                 "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": json.dumps(user_prompt, ensure_ascii=False)},
+                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
                 ],
                 "stream": False,
                 "format": "json",
@@ -206,29 +230,16 @@ def review_issues_with_ollama(
             },
             timeout=OLLAMA_REQUEST_TIMEOUT,
         )
-    except requests.RequestException as exc:
-        raise ReportPolishError(f"Ollama AI review request failed: {exc}") from exc
-
-    if response.status_code >= 400:
-        raise ReportPolishError(
-            f"Ollama AI review request failed with HTTP {response.status_code}: {response.text[:300]}"
-        )
-
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise ReportPolishError("Ollama AI review response was not valid JSON.") from exc
-
-    message = payload.get("message") if isinstance(payload, dict) else None
-    content = message.get("content") if isinstance(message, dict) else None
-    if not isinstance(content, str) or not content.strip():
-        raise ReportPolishError("Ollama AI review response did not contain message content.")
-
-    try:
-        parsed = _extract_json_object(content)
-        reviews = _normalize_reviews(issues=review_candidates, parsed=parsed)
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise ReportPolishError(f"Ollama AI review response had an unusable format: {exc}") from exc
+        response.raise_for_status()
+        response_payload = response.json()
+        content = (response_payload.get("message") or {}).get("content") if isinstance(response_payload, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Ollama AI review response did not contain message content.")
+        return content
+    validated = validated_machine_response(fetch, schema=_ReviewResponse, provider="ollama", model=OLLAMA_AI_REVIEW_MODEL, prompt_version=AI_REVIEW_PROMPT_VERSION)
+    if validated["status"] != "completed":
+        raise ReportPolishError("Ollama AI review response failed strict schema validation.")
+    reviews = _normalize_reviews(issues=review_candidates, parsed=validated["result"])
 
     if cache_path:
         save_json(

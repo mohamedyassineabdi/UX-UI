@@ -8,13 +8,61 @@ from typing import Any, Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
+from pydantic import BaseModel, ConfigDict, Field
 
+from src.audit.vlm_schema import validated_machine_response
 from .common import AXIS_DEFINITIONS, axis_prompt_contract, clean_text
 
 
 DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
 DEFAULT_VISION_MODEL = "llama3.2-vision"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+GTM_VISION_PROMPT_VERSION = "gtm_vision_v2"
+SPOTLIGHT_PROMPT_VERSION = "gtm_spotlight_v2"
+
+
+class _AxisReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    observation: str = Field(min_length=1, max_length=1200)
+    what_is_working: list[str] = Field(max_length=12)
+    proof_points: list[str] = Field(max_length=12)
+    missing_context: str = Field(max_length=1200)
+    score: float = Field(ge=0, le=100)
+    severity: str
+    confidence: float = Field(ge=0, le=1)
+    def model_post_init(self, __context: Any) -> None:
+        if self.severity not in {"low", "medium", "high"}:
+            raise ValueError("invalid severity")
+
+
+class _VisionFinding(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    axis_id: str = Field(min_length=1, max_length=80)
+    severity: str
+    confidence: float = Field(ge=0, le=1)
+    evidence: str = Field(min_length=1, max_length=1200)
+    recommendation: str = Field(min_length=1, max_length=1200)
+    def model_post_init(self, __context: Any) -> None:
+        if self.severity not in {"low", "medium", "high"}:
+            raise ValueError("invalid severity")
+
+
+class _VisionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    site_summary: str = Field(min_length=1, max_length=2400)
+    axes: dict[str, _AxisReview] = Field(min_length=1, max_length=12)
+    priority_issues: list[_VisionFinding] = Field(min_length=3, max_length=8)
+    criteria_discoveries: list[_VisionFinding] = Field(max_length=30)
+    visual_trust_findings: list[_VisionFinding] = Field(max_length=20)
+    strengths: list[str] = Field(max_length=20)
+    market_positioning: str = Field(max_length=2400)
+
+
+class _SpotlightResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    best_candidate: int = Field(ge=-1, le=1000)
+    confidence: float = Field(ge=0, le=1)
+    reason: str = Field(min_length=1, max_length=600)
 
 load_dotenv(PROJECT_ROOT / ".env", override=False)
 
@@ -28,21 +76,6 @@ def _normalize_base_url(raw_url: Optional[str]) -> str:
 
 def _image_to_base64(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode("utf-8")
-
-
-def _extract_json(text: str) -> Dict[str, Any]:
-    content = clean_text(text)
-    if not content:
-        raise ValueError("Vision model returned empty content.")
-
-    try:
-        return json.loads(content)
-    except Exception:
-        start = content.find("{")
-        end = content.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            return json.loads(content[start : end + 1])
-        raise
 
 
 def _resolved_vision_settings(
@@ -113,10 +146,7 @@ def _chat_json_with_images(
     response.raise_for_status()
     data = response.json()
     content = clean_text(((data.get("message") or {}).get("content") or ""))
-    return {
-        "model": settings["model"],
-        "parsed": _extract_json(content),
-    }
+    return {"model": settings["model"], "content": content}
 
 
 def _build_prompt(site_context: Dict[str, Any], screenshots: List[Dict[str, Any]]) -> str:
@@ -375,23 +405,26 @@ def run_gtm_vision_review(
             "used_images": 0,
             "error": "No usable screenshots were found for the GTM vision review.",
             "result": None,
+            "measurement": "not_measured", "status": "disabled",
+            "metadata": {"provider": "ollama", "model": settings["model"], "promptVersion": GTM_VISION_PROMPT_VERSION, "schemaVersion": "1", "durationMs": 0, "retryCount": 0, "validationStatus": "disabled"},
         }
 
     try:
         reviewed = _chat_json_with_images(
-            prompt=_build_prompt(site_context, usable_screenshots),
-            image_paths=image_paths,
-            api_key=api_key,
-            base_url=base_url,
-            model_name=model_name,
-            timeout=180,
-        )
+            prompt=_build_prompt(site_context, usable_screenshots), image_paths=image_paths,
+            api_key=api_key, base_url=base_url, model_name=model_name, timeout=180)
+        validated = validated_machine_response(
+            lambda correction: reviewed["content"] if correction is None else _chat_json_with_images(
+                prompt=_build_prompt(site_context, usable_screenshots) + "\n\n" + correction,
+                image_paths=image_paths, api_key=api_key, base_url=base_url, model_name=model_name, timeout=180)["content"],
+            schema=_VisionResult, provider="ollama", model=reviewed["model"], prompt_version=GTM_VISION_PROMPT_VERSION)
         return {
-            "enabled": True,
+            "enabled": validated["status"] == "completed",
             "model": reviewed["model"],
             "used_images": len(image_paths),
-            "error": "",
-            "result": reviewed["parsed"],
+            "error": "" if validated["status"] == "completed" else "Vision result failed schema validation.",
+            "result": validated["result"], "measurement": validated["measurement"], "status": validated["status"],
+            "metadata": validated["metadata"],
         }
     except Exception as error:
         return {
@@ -400,6 +433,8 @@ def run_gtm_vision_review(
             "used_images": len(image_paths),
             "error": str(error),
             "result": None,
+            "measurement": "collection_failed", "status": "failed",
+            "metadata": {"provider": "ollama", "model": settings["model"], "promptVersion": GTM_VISION_PROMPT_VERSION, "schemaVersion": "1", "durationMs": None, "retryCount": 0, "validationStatus": "failed"},
         }
 
 
@@ -439,22 +474,25 @@ def run_spotlight_candidate_review(
             "model": settings["model"],
             "error": "No usable candidate images were available for spotlight review.",
             "result": None,
+            "measurement": "not_measured", "status": "disabled",
+            "metadata": {"provider": "ollama", "model": settings["model"], "promptVersion": SPOTLIGHT_PROMPT_VERSION, "schemaVersion": "1", "durationMs": 0, "retryCount": 0, "validationStatus": "disabled"},
         }
 
     try:
         reviewed = _chat_json_with_images(
-            prompt=_build_spotlight_prompt(issue, usable_candidates),
-            image_paths=image_paths,
-            api_key=api_key,
-            base_url=base_url,
-            model_name=model_name,
-            timeout=120,
-        )
+            prompt=_build_spotlight_prompt(issue, usable_candidates), image_paths=image_paths,
+            api_key=api_key, base_url=base_url, model_name=model_name, timeout=120)
+        validated = validated_machine_response(
+            lambda correction: reviewed["content"] if correction is None else _chat_json_with_images(
+                prompt=_build_spotlight_prompt(issue, usable_candidates) + "\n\n" + correction,
+                image_paths=image_paths, api_key=api_key, base_url=base_url, model_name=model_name, timeout=120)["content"],
+            schema=_SpotlightResult, provider="ollama", model=reviewed["model"], prompt_version=SPOTLIGHT_PROMPT_VERSION)
         return {
-            "enabled": True,
+            "enabled": validated["status"] == "completed",
             "model": reviewed["model"],
-            "error": "",
-            "result": reviewed["parsed"],
+            "error": "" if validated["status"] == "completed" else "Spotlight result failed schema validation.",
+            "result": validated["result"], "measurement": validated["measurement"], "status": validated["status"],
+            "metadata": validated["metadata"],
         }
     except Exception as error:
         return {
@@ -462,4 +500,6 @@ def run_spotlight_candidate_review(
             "model": settings["model"],
             "error": str(error),
             "result": None,
+            "measurement": "collection_failed", "status": "failed",
+            "metadata": {"provider": "ollama", "model": settings["model"], "promptVersion": SPOTLIGHT_PROMPT_VERSION, "schemaVersion": "1", "durationMs": None, "retryCount": 0, "validationStatus": "failed"},
         }

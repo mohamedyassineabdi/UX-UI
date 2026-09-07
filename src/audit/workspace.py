@@ -121,6 +121,14 @@ class AuditWorkspace:
         return self.screenshots / "interactions"
 
     @property
+    def accessibility_dir(self) -> Path:
+        return self.root / "accessibility" / "axe"
+
+    @property
+    def lighthouse_dir(self) -> Path:
+        return self.root / "performance" / "lighthouse"
+
+    @property
     def audit_dir(self) -> Path:
         return self.root / "audit"
 
@@ -173,6 +181,8 @@ class AuditWorkspace:
             self.checks_dir,
             self.page_screenshots,
             self.interaction_screenshots,
+            self.accessibility_dir,
+            self.lighthouse_dir,
             self.audit_dir,
             self.workbook_dir,
             self.report,
@@ -203,6 +213,8 @@ class AuditWorkspace:
                     "publication": str(self.publication.relative_to(self.root)),
                     "coverageManifest": str(self.coverage_manifest.relative_to(self.root)),
                     "evidenceManifest": str(self.evidence_manifest.relative_to(self.root)),
+                    "axe": str(self.accessibility_dir.relative_to(self.root)),
+                    "lighthouse": str(self.lighthouse_dir.relative_to(self.root)),
                 },
             },
         )

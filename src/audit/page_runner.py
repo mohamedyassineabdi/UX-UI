@@ -13,6 +13,7 @@ from src.audit.html_extractor import extract_html_blocks
 from src.audit.checks.runtime_motion_detector import detect_runtime_motion
 from src.audit.rendered_css_extractor import extract_rendered_ui
 from src.audit.safe_interaction_tester import test_safe_clickables
+from src.audit.axe_runner import run_axe
 from src.utils.file_utils import ensure_dir, join_path, write_json_file
 from src.utils.url_utils import build_page_folder_name, build_website_folder_name
 
@@ -294,6 +295,7 @@ async def run_page_audit(*, context, page_info, page_index, config):
     )
 
     result = {
+        "pageId": str(page_info.get("pageId") or ""),
         "index": page_index + 1,
         "name": page_info["name"],
         "originalUrl": page_info["url"],
@@ -445,6 +447,9 @@ async def run_page_audit(*, context, page_info, page_index, config):
 
         if config.get("renderedUi", {}).get("enabled"):
             result["renderedUi"] = await extract_rendered_ui(page, config)
+        # Standards automation runs only after this isolated, successfully
+        # collected page has loaded through the existing network guard.
+        result["axe"] = await run_axe(page, page_id=str(page_info.get("pageId") or ""))
         if (config.get("presentationChecks") or {}).get("runtimeMotion", {}).get("enabled", False):
             result["runtimeMotion"] = await detect_runtime_motion(page, config)
 
