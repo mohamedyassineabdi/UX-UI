@@ -651,7 +651,10 @@ def render_issue_tabs(
 
 def render_axis_tile(axis: Dict[str, Any], index: int) -> str:
     axis_id = _safe_dom_id("axis", axis.get("id") or axis.get("shortName") or index)
-    score = round(float(axis.get("score", 0)) / 10, 1)
+    raw_score = axis.get("score")
+    if raw_score is None:
+        return f'''<article class="axis-tile tone-unscored" data-axis-id="{html.escape(axis_id)}"><span class="floating-step">{index}</span><h4>{html.escape(axis_label(axis.get("id"), axis.get("shortName") or axis.get("name")))}</h4><p>Not scored — {html.escape(clean_text(axis.get("scoreReason")) or "No applicable measured evidence.")}</p></article>'''
+    score = round(float(raw_score) / 10, 1)
     tone = severity_tone(axis.get("severity")).title()
     return f"""
     <article class="axis-tile tone-{severity_tone(axis.get("severity"))} score-{score_tone(score)}" style="--score-color:{score_accent(score)};" data-axis-id="{html.escape(axis_id)}">
@@ -679,7 +682,7 @@ def render_axis_section(
 ) -> str:
     lead_item = ((axis.get("painPoints") or [])[:1] or (axis.get("strengths") or [])[:1] or [{}])[0]
     shot = clean_text(lead_item.get("spotlightImage")) or href_from_repo(lead_item.get("screenshotPath", ""), output_dir)
-    axis_score = round(float(axis.get("score", 0)) / 10, 1)
+    axis_score = round(float(axis.get("score") or 0) / 10, 1)
     tone = severity_tone(axis.get("severity"))
     _ = is_screenshot_audit
     visual = render_evidence_frame(
@@ -1317,8 +1320,9 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     weakest_axis = summary.get("weakestAxis") or {}
     strongest = axis_label(strongest_axis.get("id"), strongest_axis.get("shortName") or strongest_axis.get("name")) if strongest_axis else ""
     weakest = axis_label(weakest_axis.get("id"), weakest_axis.get("shortName") or weakest_axis.get("name")) if weakest_axis else ""
-    overall_ten = round(float(summary.get("overallScore", 0)) / 10, 1)
-    hero_score = render_score_ring(overall_ten, label="Overall", size=170, attrs={"data-score-role": "overall"})
+    raw_overall = summary.get("overallScore")
+    overall_ten = round(float(raw_overall) / 10, 1) if raw_overall is not None else 0.0
+    hero_score = render_score_ring(overall_ten, label="Overall", size=170, attrs={"data-score-role": "overall"}) if raw_overall is not None else '<div class="score-ring"><strong>Not<br>scored</strong></div>'
     client_lockup = clean_text(site.get("display_name")) or clean_text(site.get("domain")) or "Client"
     scanned_pages_html = "".join(render_scanned_page(item, output_dir, is_mobile_visual=is_mobile_visual) for item in scanned_pages_data)
     scanned_pages_clone_html = scanned_pages_html.replace('<a class="scan-card', '<a tabindex="-1" class="scan-card')

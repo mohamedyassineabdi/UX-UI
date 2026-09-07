@@ -246,3 +246,7 @@ See [docs/SECURITY_OPERATIONS.md](docs/SECURITY_OPERATIONS.md) for authenticatio
 # Phase 2B evidence semantics
 
 Generated checks retain `outcome`, `applicability`, `measurement`, structured `provenance`, and stable rule/finding/evidence identifiers. `N/A` and TRUE/FALSE labels are legacy workbook-export values only. Use `--evidence-manifest <job-workspace>/audit/evidence_manifest.json` with `run_sheet_checks` to write the job-local manifest atomically.
+
+## Phase 3A internal audit scoring methodology
+
+Axis scores use only applicable, measured pass/fail rules: weighted passes divided by weighted measured pass/fail rules. Warnings are displayed as cautions and do not receive synthetic half-credit. Not-applicable, unknown, not-measured, and collection-failed states are excluded from compliance arithmetic; they reduce measurement coverage instead. Measurement coverage is measured applicable rule weight divided by applicable rule weight, while Phase 2A collection coverage remains a separate page-collection measure. Rule-to-axis assignment is an explicit registry; unmapped custom rules remain visible but do not score. Findings are deduplicated by rule, audited page scope, and defect target, preserving all detector sources and evidence IDs. A verified, measured, applicable critical failure is surfaced as a blocker regardless of the numerical average. This is an internal methodology, not a calibrated benchmark.

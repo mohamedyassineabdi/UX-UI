@@ -483,11 +483,12 @@ def build_payload(
         "error": clean_text(text_refinement.get("error")),
     }
     axes = _build_axes(vision_result, screenshots)
-    overall_score = int(round(mean([axis["score"] for axis in axes], default=55.0)))
-    strongest = max(axes, key=lambda axis: axis["score"], default=None)
-    weakest = min(axes, key=lambda axis: axis["score"], default=None)
+    scored_axes = [axis for axis in axes if axis.get("score") is not None]
+    overall_score = int(round(mean([axis["score"] for axis in scored_axes])) if scored_axes else 0) if scored_axes else None
+    strongest = max(scored_axes, key=lambda axis: axis["score"], default=None)
+    weakest = min(scored_axes, key=lambda axis: axis["score"], default=None)
     priorities = _top_priorities(axes)
-    summary = f"{clean_text(site_name) or 'Screenshot audit'} scores {overall_score}/100 on the screenshot-based GTM UX/UI audit pass."
+    summary = f"{clean_text(site_name) or 'Screenshot audit'} is {'Not scored' if overall_score is None else f'{overall_score}/100'} on the screenshot-based GTM UX/UI audit pass."
     if weakest:
         summary += f" The biggest commercial risk sits in {weakest['shortName'].lower()} ({weakest['score']}/100)."
     if vision.get("error"):

@@ -12,11 +12,9 @@ from src.audit.workspace import atomic_write_json
 from .common import (
     AXIS_DEFINITIONS,
     AXIS_IMPACT,
-    AXIS_KEYWORDS,
     AXIS_USER_IMPACT,
     clamp,
     clean_text,
-    count_keyword_hits,
     dedupe_strings,
     mean,
     normalize_status,
@@ -25,6 +23,7 @@ from .common import (
     score_to_severity,
 )
 from .vision_client import run_gtm_vision_review
+from .scoring import axis_mapping, deduplicate_findings, overall_score as calculate_overall_score, score_axis
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -141,6 +140,13 @@ def flatten_checks(checks_data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "row": safe_int(item.get("row")),
                     "criterion": clean_text(item.get("criterion")),
                     "status": normalize_status(item.get("status")),
+                    "outcome": clean_text(item.get("outcome")).lower() or normalize_status(item.get("status")).lower(),
+                    "applicability": clean_text(item.get("applicability")).lower() or "applicable",
+                    "measurement": clean_text(item.get("measurement")).lower() or "measured",
+                    "ruleId": clean_text(item.get("ruleId")),
+                    "findingId": clean_text(item.get("findingId")),
+                    "evidenceIds": list(item.get("evidenceIds") or []),
+                    "provenance": item.get("provenance") if isinstance(item.get("provenance"), dict) else {},
                     "confidence": clamp(safe_float(item.get("confidence"), 0.5), 0.0, 1.0),
                     "decision_basis": clean_text(item.get("decision_basis")).lower(),
                     "rationale": clean_text(item.get("rationale")),
@@ -154,11 +160,12 @@ def flatten_checks(checks_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def sheet_score(summary: Dict[str, Any]) -> float:
+def sheet_score(summary: Dict[str, Any]) -> Optional[float]:
     passed = safe_int(summary.get("TRUE"))
     failed = safe_int(summary.get("FALSE"))
     total = passed + failed
-    return round((passed / total) * 100.0, 1) if total else 45.0
+    # Legacy profile context only; it is not an axis contribution.
+    return round((passed / total) * 100.0, 1) if total else None
 
 
 def _performance_score(performance: Dict[str, Any]) -> float:
@@ -191,7 +198,7 @@ def _performance_score(performance: Dict[str, Any]) -> float:
     if transfer > 0:
         scores.append(clamp(100.0 - max(0.0, transfer - 2_000_000.0) / 45_000.0, 0.0, 100.0))
     scores.append(clamp(100.0 - blocking_count * 12.0, 0.0, 100.0))
-    return round(mean(scores, default=55.0), 1)
+    return round(mean(scores, default=0.0), 1)
 
 
 def page_performance_profiles(cleaned_pages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -633,7 +640,7 @@ def build_profile(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
     average_interaction_settle_ms = safe_float(summary.get("averageInteractionSettleMs"), 0.0)
     p95_interaction_settle_ms = safe_float(summary.get("p95InteractionSettleMs"), 0.0)
     performance_profiles = page_performance_profiles(cleaned_pages)
-    performance_score = mean([item["score"] for item in performance_profiles], default=55.0)
+    performance_score = mean([item["score"] for item in performance_profiles], default=0.0) if performance_profiles else None
     wcag_findings = wcag_findings_from_runtime(rendered_data, cleaned_pages, results_data)
     host = urlparse(clean_text(website_menu.get("homepage"))).netloc or clean_text(website_menu.get("homepage"))
     if host.startswith("www."):
@@ -666,9 +673,8 @@ def build_profile(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
             "interactionSuccessRate": interaction_success_rate,
             "averageInteractionSettleMs": average_interaction_settle_ms,
             "p95InteractionSettleMs": p95_interaction_settle_ms,
-            "performanceScore": performance_score,
-            "coreWebVitals": performance_score,
-            "pageSpeed": performance_score,
+            "customPerformanceScore": performance_score,
+            "performanceScore": performance_score,  # deprecated report adapter alias
             "designHealth": mean([mean(collect_numbers(page.get("renderedUi") or {}, "overallDesignSystemHealth"), default=0.0) for page in rendered_pages], default=0.0),
             "componentConsistency": mean([mean(collect_numbers(page.get("renderedUi") or {}, "componentConsistency"), default=0.0) for page in rendered_pages], default=0.0),
             "navigationClarity": mean([mean(collect_numbers(page.get("renderedUi") or {}, "navigationClarity"), default=0.0) for page in rendered_pages], default=0.0),
@@ -777,134 +783,16 @@ def row_weight(row: Dict[str, Any]) -> float:
 
 
 def axis_rows(flat_rows: List[Dict[str, Any]], axis: Dict[str, Any]) -> List[Dict[str, Any]]:
-    focus = {sheet.lower() for sheet in axis.get("focus") or []}
-    keywords = AXIS_KEYWORDS.get(axis["id"], [])
     out = []
     for row in flat_rows:
-        texts = [row.get("criterion"), row.get("rationale")] + (row.get("evidence") or [])
-        sheet_match = clean_text(row.get("sheet")).lower() in focus
-        keyword_hits = count_keyword_hits(texts, keywords)
-        criterion_hits = count_keyword_hits([row.get("criterion")], keywords)
-        if sheet_match or criterion_hits >= 1 or keyword_hits >= 2:
-            out.append({**row, "_axis_relevance": round((2.0 if sheet_match else 0.0) + min(keyword_hits, 4) * 0.35, 2)})
+        weight = axis_mapping(row).get(axis["id"])
+        if weight:
+            out.append({**row, "axisWeight": weight})
     return out
 
 
-def axis_row_score(rows: List[Dict[str, Any]]) -> Dict[str, float]:
-    if not rows:
-        return {"score": 55.0, "confidence": 0.25}
-    total = 0.0
-    points = 0.0
-    confs = []
-    for row in rows:
-        weight = row_weight(row)
-        confidence = clamp(safe_float(row.get("confidence"), 0.5), 0.15, 1.0)
-        confs.append(confidence)
-        status = normalize_status(row.get("status"))
-        status_score = 1.0 if status == "TRUE" else 0.0 if status == "FALSE" else 0.5
-        factor = 0.5 + 0.5 * confidence
-        total += weight * factor
-        points += weight * factor * status_score
-    return {"score": round((points / total) * 100.0, 1) if total else 55.0, "confidence": round(clamp(mean(confs, default=0.35) * min(1.0, len(rows) / 7.0), 0.2, 0.95), 2)}
-
-
-def metric_score(axis_id: str, profile: Dict[str, Any]) -> float:
-    metrics = profile["metrics"]
-    sheets = profile["sheetScores"]
-    messaging = profile["messaging"]
-    if axis_id == "task_execution":
-        runtime_performance = mean(
-            [
-                metrics.get("performanceScore", 55.0),
-                metrics.get("coreWebVitals", 55.0),
-                metrics.get("pageSpeed", 55.0),
-            ],
-            default=55.0,
-        )
-        settle_score = 55.0
-        p95_settle = safe_float(metrics.get("p95InteractionSettleMs"), 0.0)
-        if p95_settle > 0:
-            settle_score = clamp(100.0 - max(0.0, p95_settle - 1000.0) / 35.0, 0.0, 100.0)
-        return mean([runtime_performance, settle_score, metrics.get("interactionSuccessRate", 52.0), metrics.get("formUsability", 55.0), metrics.get("interactionFeedback", 55.0), metrics.get("ctaClarity", 55.0)], default=55.0)
-    if axis_id == "flow_architecture":
-        nav_structure = 82.0 if profile["counts"]["topLevelNavigation"] >= 3 and profile["counts"]["navigationItems"] >= 5 else 52.0
-        return mean([metrics.get("navigationClarity", 55.0), metrics.get("contentHierarchy", 55.0), nav_structure, sheets.get("Navigation", 55.0)], default=55.0)
-    if axis_id == "trust_accessibility":
-        trust_score = clamp(40.0 + messaging.get("trustSignals", 0) * 12.0, 0.0, 100.0)
-        return mean([metrics.get("accessibilityReadiness", 55.0), sheets.get("Content", 55.0), sheets.get("Labeling", 55.0), sheets.get("Forms", 55.0), trust_score], default=55.0)
-    if axis_id == "ui_consistency":
-        return mean([metrics.get("designHealth", 55.0), metrics.get("componentConsistency", 55.0), sheets.get("Presentation", 55.0), sheets.get("Visual hierarchy", 55.0)], default=55.0)
-    if axis_id == "content_microcopy":
-        copy_score = clamp(35.0 + min(len(profile["messaging"]["heroCtas"]), 4) * 10.0, 0.0, 100.0)
-        return mean([sheets.get("Content", 55.0), sheets.get("Labeling", 55.0), copy_score], default=55.0)
-    return 55.0
-
-
-def score_ceiling(axis_id: str, profile: Dict[str, Any]) -> Dict[str, Any]:
-    counts = profile.get("counts") or {}
-    messaging = profile.get("messaging") or {}
-    metrics = profile.get("metrics") or {}
-    pages = safe_int(counts.get("pages"))
-    nav_items = safe_int(counts.get("navigationItems"))
-    top_nav = safe_int(counts.get("topLevelNavigation"))
-    ctas = len(messaging.get("heroCtas") or [])
-    text_items = len(messaging.get("textPool") or [])
-    trust_signals = safe_int(messaging.get("trustSignals")) + safe_int(messaging.get("proofSignals"))
-    interaction_rate = safe_float(metrics.get("interactionSuccessRate"), 52.0)
-
-    ceiling = 100.0
-    reasons: List[str] = []
-
-    def cap(value: float, reason: str) -> None:
-        nonlocal ceiling
-        if value < ceiling:
-            ceiling = value
-        if reason not in reasons:
-            reasons.append(reason)
-
-    if pages <= 1 and nav_items == 0:
-        if axis_id == "task_execution":
-            cap(45.0, "Only one page and no detected navigation/CTA path, so task completion evidence is weak.")
-        elif axis_id == "flow_architecture":
-            cap(35.0, "Only one page and no detected navigation, so information architecture cannot score as mature.")
-        elif axis_id == "trust_accessibility":
-            cap(48.0, "Only one page and no supporting journey or proof context limits trust/accessibility confidence.")
-        elif axis_id == "ui_consistency":
-            cap(55.0, "Too few repeated patterns were available to justify a high consistency score.")
-        elif axis_id == "content_microcopy":
-            cap(42.0, "Only one page with little journey copy cannot show strong content depth.")
-
-    if ctas == 0:
-        if axis_id == "task_execution":
-            cap(48.0, "No outcome-specific CTA was detected on the primary page.")
-        elif axis_id == "content_microcopy":
-            cap(52.0, "No clear primary CTA copy was detected.")
-
-    if top_nav == 0 and axis_id == "flow_architecture":
-        cap(45.0, "No top-level navigation was detected.")
-
-    if text_items <= 5:
-        if axis_id == "content_microcopy":
-            cap(45.0, "Very little meaningful visible copy was available.")
-        elif axis_id == "trust_accessibility":
-            cap(52.0, "Very little visible content was available for trust and accessibility judgment.")
-
-    if trust_signals == 0 and axis_id == "trust_accessibility":
-        cap(55.0, "No visible trust or proof signals were detected.")
-
-    if interaction_rate < 50 and axis_id == "task_execution":
-        cap(58.0, "Tested interactions succeeded less than half the time.")
-
-    return {"ceiling": ceiling, "reasons": reasons}
-
-
-def vision_axis_score(payload: Optional[Dict[str, Any]]) -> Optional[float]:
-    if not isinstance(payload, dict):
-        return None
-    severity = clean_text(payload.get("severity")).lower()
-    confidence = clamp(safe_float(payload.get("confidence"), 0.5), 0.1, 1.0)
-    base = {"low": 80.0, "medium": 58.0, "high": 36.0}.get(severity)
-    return None if base is None else clamp(base + (confidence - 0.5) * 12.0, 0.0, 100.0)
+def axis_row_score(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return score_axis(rows).to_dict()
 
 
 def _detail_sentence(text: str) -> str:
@@ -1832,13 +1720,11 @@ def attach_ai_findings_to_axes(axes: List[Dict[str, Any]], findings: List[Dict[s
 def build_axis(axis: Dict[str, Any], flat_rows: List[Dict[str, Any]], profile: Dict[str, Any], vision_axes: Dict[str, Any]) -> Dict[str, Any]:
     rows = axis_rows(flat_rows, axis)
     rows_scored = axis_row_score(rows)
-    heuristic = metric_score(axis["id"], profile)
     axis_review = (vision_axes or {}).get(axis["id"]) or {}
-    vscore = vision_axis_score(axis_review)
-    weighted = [(rows_scored["score"], 0.55), (heuristic, 0.35)] + ([(vscore, 0.10)] if vscore is not None else [])
-    raw_score = round(sum(value * weight for value, weight in weighted) / sum(weight for _, weight in weighted), 1)
-    ceiling = score_ceiling(axis["id"], profile)
-    score = round(min(raw_score, safe_float(ceiling.get("ceiling"), 100.0)), 1)
+    # Heuristic, VLM, count, and ceiling formulas are evidence only. They do
+    # not manufacture or modify compliance scores.
+    raw_score = rows_scored["score"]
+    score = raw_score
     failed = sorted(
         [row for row in rows if row["status"] == "FALSE"],
         key=lambda row: (
@@ -1852,11 +1738,6 @@ def build_axis(axis: Dict[str, Any], flat_rows: List[Dict[str, Any]], profile: D
     passed = sorted([row for row in rows if row["status"] == "TRUE"], key=lambda row: (-row["confidence"], row["sheet"], row["row"]))
     performance_profiles = profile.get("performance") if isinstance(profile.get("performance"), list) else []
     wcag_findings = profile.get("wcagFindings") if isinstance(profile.get("wcagFindings"), list) else []
-    if axis["id"] == "trust_accessibility" and wcag_findings:
-        high_count = sum(1 for item in wcag_findings if clean_text(item.get("severity")).lower() == "high")
-        medium_count = sum(1 for item in wcag_findings if clean_text(item.get("severity")).lower() == "medium")
-        wcag_penalty = min(35.0, high_count * 5.0 + medium_count * 2.5)
-        score = round(max(0.0, score - wcag_penalty), 1)
     performance_findings: List[Dict[str, Any]] = []
     performance_strengths: List[Dict[str, Any]] = []
     if axis["id"] == "task_execution":
@@ -1883,7 +1764,8 @@ def build_axis(axis: Dict[str, Any], flat_rows: List[Dict[str, Any]], profile: D
         else []
     )
     wcag_count = len(wcag_findings) if axis["id"] == "trust_accessibility" else 0
-    summary = f"{axis['short_name']} scores {int(round(score))}/100 in this GTM view. Structured evidence surfaced {len(failed) + len(performance_findings) + wcag_count} pain point(s) and {len(passed) + len(performance_strengths)} positive signal(s)."
+    score_text = f"{int(round(score))}/100" if score is not None else "Not scored"
+    summary = f"{axis['short_name']} is {score_text} in this GTM view. Structured evidence surfaced {len(failed) + len(performance_findings) + wcag_count} pain point(s) and {len(passed) + len(performance_strengths)} positive signal(s)."
     if vision_observation:
         summary += f" Vision review: {vision_observation}"
     if missing_context:
@@ -1898,9 +1780,11 @@ def build_axis(axis: Dict[str, Any], flat_rows: List[Dict[str, Any]], profile: D
         "healthySignals": list(axis.get("healthy_signals") or []),
         "failureModes": list(axis.get("failure_modes") or []),
         "outOfScope": list(axis.get("out_of_scope") or []),
-        "score": int(round(score)),
-        "severity": score_to_severity(score),
-        "confidence": round(clamp(mean([rows_scored["confidence"], 0.65 if heuristic > 0 else 0.25, safe_float(axis_review.get("confidence"), 0.0)], default=0.4), 0.25, 0.95), 2),
+        "score": round(score, 1) if score is not None else None,
+        "scored": rows_scored["scored"],
+        "scoreReason": rows_scored["reason"],
+        "severity": score_to_severity(score) if score is not None else "unscored",
+        "confidence": rows_scored["confidence"],
         "summary": summary,
         "businessImpact": AXIS_IMPACT[axis["id"]],
         "painPoints": pain_points,
@@ -1908,12 +1792,19 @@ def build_axis(axis: Dict[str, Any], flat_rows: List[Dict[str, Any]], profile: D
         "opportunities": dedupe_strings(([f"Resolve '{item['title']}' on the main commercial pages first." for item in pain_points[:2]] + [f"Raise this axis on homepage and primary conversion journeys before broader refinements."]), limit=3),
         "evidence": dedupe_strings([item["evidence"] for item in pain_points + strengths if clean_text(item.get("evidence"))] + performance_evidence + proof_points + profile["messaging"]["heroHeadings"][:2] + profile["messaging"]["heroCtas"][:2], limit=6),
         "signals": {
-            "rowScore": round(rows_scored["score"], 1),
-            "heuristicScore": round(heuristic, 1),
-            "visionScore": round(vscore, 1) if vscore is not None else None,
+            "rowScore": round(rows_scored["score"], 1) if rows_scored["score"] is not None else None,
+            "measurementCoverage": rows_scored["coverage"],
+            "measuredRules": rows_scored["measured_count"],
+            "applicableRules": rows_scored["applicable_count"],
+            "unknownRules": rows_scored["unknown_count"],
+            "notMeasuredRules": rows_scored["not_measured_count"],
+            "collectionFailedRules": rows_scored["collection_failed_count"],
+            "warningRules": rows_scored["warning_count"],
+            "heuristicScore": None,
+            "visionScore": None,
             "rawScoreBeforeCaps": raw_score,
-            "scoreCeiling": safe_float(ceiling.get("ceiling"), 100.0),
-            "scoreCeilingReasons": ceiling.get("reasons") or [],
+            "scoreCeiling": None,
+            "scoreCeilingReasons": [],
             "relevantChecks": len(rows),
             "performanceKpis": performance_profiles[:5] if axis["id"] == "task_execution" else [],
             "wcagFindings": wcag_findings[:8] if axis["id"] == "trust_accessibility" else [],
@@ -1996,7 +1887,7 @@ def top_priorities(axes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         key=lambda item: (
             0 if item.get("responsiveFailure") else 1,
             rank.get(clean_text(item.get("severity")).lower(), 3),
-            item.get("axisScore", 999),
+            item.get("axisScore") if item.get("axisScore") is not None else 999,
             -safe_float(item.get("confidence"), 0.0),
         )
     )
@@ -2098,16 +1989,19 @@ def build_payload(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
     axes = diversify_axis_leads([build_axis(axis, flat_rows, profile, vision_axes) for axis in AXIS_DEFINITIONS])
     ai_findings = ai_discovered_findings(vision, vision_screenshots, AXIS_DEFINITIONS)
     attach_ai_findings_to_axes(axes, ai_findings)
-    overall_score = int(round(mean([axis["score"] for axis in axes], default=0.0)))
-    strongest = max(axes, key=lambda axis: axis["score"], default=None)
-    weakest = min(axes, key=lambda axis: axis["score"], default=None)
+    all_findings = deduplicate_findings([point for axis in axes for point in axis.get("painPoints") or []])
+    overall = calculate_overall_score([score_axis(axis_rows(flat_rows, axis)) for axis in AXIS_DEFINITIONS], all_findings)
+    overall_score = round(overall["score"], 1) if overall["score"] is not None else None
+    scored_axes = [axis for axis in axes if axis.get("score") is not None]
+    strongest = max(scored_axes, key=lambda axis: axis["score"], default=None)
+    weakest = min(scored_axes, key=lambda axis: axis["score"], default=None)
     priorities = top_priorities(axes)
     position = clean_text(((vision.get("result") or {}).get("market_positioning") or ""))
     if not position and profile["messaging"]["heroHeadings"]:
         lead = profile["messaging"]["heroHeadings"][0]
         cta = clean_text((profile["messaging"]["heroCtas"] or [""])[0])
         position = f"Lead with '{lead}' and support it with a clearer commercial CTA like '{cta}'." if cta else f"Lead with '{lead}' as the commercial narrative anchor."
-    summary = f"{profile['site']['display_name']} scores {overall_score}/100 on the first GTM-oriented UX/UI audit pass."
+    summary = f"{profile['site']['display_name']} is {'Not scored' if overall_score is None else f'{overall_score}/100'} on the first GTM-oriented UX/UI audit pass."
     if weakest:
         summary += f" The biggest commercial risk sits in {weakest['shortName'].lower()} ({weakest['score']}/100)."
     if strongest:
@@ -2145,8 +2039,9 @@ def build_payload(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
         "scannedPages": scanned_pages,
         "visionReview": vision,
         "aiDiscoveredFindings": ai_findings,
+        "deduplicatedFindings": all_findings,
         "axes": axes,
-        "executiveSummary": {"overallScore": overall_score, "strongestAxis": strongest, "weakestAxis": weakest, "summary": summary, "positioningHook": position, "topPriorities": priorities},
+        "executiveSummary": {"overallScore": overall_score, "overallScored": overall["scored"], "overallReason": overall["reason"], "overallCoverage": overall["coverage"], "axesScored": overall["axesScored"], "axesTotal": overall["axesTotal"], "criticalFindingCount": overall["criticalFindingCount"], "hasCriticalBlocker": overall["hasCriticalBlocker"], "overallRating": overall["rating"], "strongestAxis": strongest, "weakestAxis": weakest, "summary": summary, "positioningHook": position, "topPriorities": priorities},
         "recommendations": build_recommendations(priorities),
         "artifacts": {
             "websiteMenu": str(website_menu.get("homepage") or ""),
