@@ -4232,6 +4232,9 @@
         const [criteriaDraft, setCriteriaDraft] = useState(null);
         const [criteriaStatus, setCriteriaStatus] = useState("");
         const [isCriteriaBusy, setIsCriteriaBusy] = useState(false);
+        const [review, setReview] = useState(null);
+        const [reviewStatus, setReviewStatus] = useState("");
+        const [reviewDraft, setReviewDraft] = useState({ findingId: "", reviewNote: "", reviewedRecommendation: "", priorityOverride: "", reviewDecision: "", suppressed: false, suppressionReason: "" });
         const auditSectionRef = useRef(null);
         const screenshotFilesRef = useRef([]);
 
@@ -4250,9 +4253,9 @@
         }, [figmaUrl, isFigmaAudit, isMobileLiveAudit, isScreenshotAudit, isSubmitting, isWebsiteUrlAudit, screenshotFiles.length, url]);
 
         const completionText = useMemo(() => {
-          if (isFigmaAudit) return "Open the generated editable Figma audit report, review the scoring, text, and screenshots, then deploy it when ready.";
-          if (isMobileLiveAudit) return "Open the generated editable mobile audit report, review the extracted artifacts, then deploy it when ready.";
-          return "Open the generated editable audit report, review the evidence, scores, and copy, then deploy it when ready.";
+          if (isFigmaAudit) return "Open the generated Figma audit report, then use the structured review workspace before publishing a reviewed snapshot.";
+          if (isMobileLiveAudit) return "Open the generated mobile audit report, then use the structured review workspace before publishing a reviewed snapshot.";
+          return "Open the generated audit report, then use the structured review workspace before publishing a reviewed snapshot.";
         }, [isFigmaAudit, isMobileLiveAudit]);
 
         useEffect(() => {
@@ -4361,6 +4364,85 @@
             window.clearInterval(timer);
           };
         }, [job?.id, job?.status]);
+
+        async function refreshReview() {
+          if (!job?.id) return;
+          setReviewStatus("Loading review state...");
+          try {
+            const response = await apiFetch(`/api/audits/${encodeURIComponent(job.id)}/review`);
+            const payload = await readApiJson(response, "Unable to load review state.");
+            if (!response.ok) throw new Error(payload.error || "Unable to load review state.");
+            setReview(payload);
+            setReviewStatus("");
+          } catch (reviewError) {
+            setReviewStatus(reviewError.message || "Unable to load review state.");
+          }
+        }
+
+        useEffect(() => {
+          setReview(null);
+          setReviewStatus("");
+          if (job?.id && job?.status === "completed") refreshReview();
+        }, [job?.id, job?.status]);
+
+        async function saveReview() {
+          if (!job?.id || !reviewDraft.findingId.trim()) return;
+          setReviewStatus("Saving review changes...");
+          const fields = {};
+          ["reviewNote", "reviewedRecommendation", "priorityOverride", "reviewDecision"].forEach((name) => {
+            if (reviewDraft[name]) fields[name] = reviewDraft[name];
+          });
+          if (reviewDraft.suppressed) {
+            fields.suppressed = true;
+            fields.suppressionReason = reviewDraft.suppressionReason;
+          }
+          try {
+            const response = await apiFetch(`/api/audits/${encodeURIComponent(job.id)}/revisions`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ expectedRevisionId: review?.currentRevision || null, findingChanges: { [reviewDraft.findingId.trim()]: fields } }),
+            });
+            const payload = await readApiJson(response, "Unable to save review changes.");
+            if (response.status === 409) {
+              setReviewStatus("This review was changed in another session. Refresh before saving again.");
+              return;
+            }
+            if (!response.ok) throw new Error(payload.error || "Unable to save review changes.");
+            setReviewDraft({ findingId: "", reviewNote: "", reviewedRecommendation: "", priorityOverride: "", reviewDecision: "", suppressed: false, suppressionReason: "" });
+            await refreshReview();
+            setReviewStatus("Review revision saved. It has not been validated or published.");
+          } catch (reviewError) {
+            setReviewStatus(reviewError.message || "Unable to save review changes.");
+          }
+        }
+
+        async function transitionReview(action) {
+          const revisionId = review?.currentRevision;
+          if (!job?.id || !revisionId) return;
+          setReviewStatus(`${action === "validate" ? "Validating" : "Approving"} revision...`);
+          try {
+            const response = await apiFetch(`/api/audits/${encodeURIComponent(job.id)}/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ revisionId }) });
+            const payload = await readApiJson(response, "Unable to update review state.");
+            if (!response.ok) throw new Error(payload.error || "Unable to update review state.");
+            await refreshReview();
+            setReviewStatus(action === "validate" ? "Revision validated. It has not been published." : "Revision approved. It has not been published.");
+          } catch (reviewError) {
+            setReviewStatus(reviewError.message || "Unable to update review state.");
+          }
+        }
+
+        async function publishReview(revisionId) {
+          if (!job?.id) return;
+          setReviewStatus(revisionId ? "Publishing the selected reviewed revision..." : "Publishing machine report — not reviewed...");
+          try {
+            const response = await apiFetch(`/api/audits/${encodeURIComponent(job.id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(revisionId ? { revisionId } : {}) });
+            const payload = await readApiJson(response, "Unable to publish report.");
+            if (!response.ok) throw new Error(payload.error || "Unable to publish report.");
+            setReviewStatus(`Publication completed: ${payload.url || "report published"}`);
+          } catch (reviewError) {
+            setReviewStatus(reviewError.message || "Unable to publish report.");
+          }
+        }
 
         function scrollToAudit() {
           setAuditUnlocked(true);
@@ -4864,7 +4946,8 @@
                   ),
                 launchStep === "input" && job && e(StatusStrip, { job, isStopping, onOpen: () => setIsModalOpen(true), onStop: handleStopAudit })
               )
-            )
+            ),
+            job?.status === "completed" && e(ReviewWorkspace, { review, reviewDraft, reviewStatus, setReviewDraft, onRefresh: refreshReview, onSave: saveReview, onValidate: () => transitionReview("validate"), onApprove: () => transitionReview("approve"), onPublish: publishReview })
           ),
           auditUnlocked &&
             transitionProgress > 0.45 &&
@@ -4892,6 +4975,37 @@
               setCriteriaDraft,
             }),
           isModalOpen && job && e(ProgressModal, { job, error, isStopping, onClose: () => setIsModalOpen(false), onStop: handleStopAudit })
+        );
+      }
+
+      function ReviewWorkspace({ review, reviewDraft, reviewStatus, setReviewDraft, onRefresh, onSave, onValidate, onApprove, onPublish }) {
+        const revisions = Array.isArray(review?.revisions) ? review.revisions : [];
+        const current = revisions.find((item) => item.revisionId === review?.currentRevision) || null;
+        const publishable = current && ["validated", "approved"].includes(current.reviewStatus);
+        const updateDraft = (field, value) => setReviewDraft((draft) => ({ ...draft, [field]: value }));
+        return e(
+          "section",
+          { className: "audit-panel", "aria-labelledby": "review-workspace-heading", style: { marginTop: "20px" } },
+          e("div", { className: "ey-pill" }, "Structured review"),
+          e("h2", { id: "review-workspace-heading" }, "Review and publication"),
+          e("p", { className: "stage" }, "Save creates a revision only. Validation, approval, and publication are separate actions."),
+          e("p", { className: "field-note" }, `Review status: ${review?.reviewStatus || "unreviewed"} · Current revision: ${review?.currentRevision ? review.currentRevision.slice(0, 8) : "none"} · Validated: ${review?.validatedAt ? "yes" : "no"} · Approved: ${review?.approvedAt ? "yes" : "no"}`),
+          e(
+            "div",
+            { className: "field-grid" },
+            e("div", { className: "field" }, e("label", { htmlFor: "review-finding-id" }, "Finding ID"), e("input", { id: "review-finding-id", value: reviewDraft.findingId, placeholder: "Exact machine finding ID", onChange: (event) => updateDraft("findingId", event.target.value) })),
+            e("div", { className: "field" }, e("label", { htmlFor: "review-priority" }, "Priority override"), e("select", { id: "review-priority", value: reviewDraft.priorityOverride, onChange: (event) => updateDraft("priorityOverride", event.target.value) }, e("option", { value: "" }, "No override"), ["low", "medium", "high", "critical"].map((value) => e("option", { value, key: value }, value))))
+          ),
+          e("div", { className: "field" }, e("label", { htmlFor: "review-note" }, "Reviewer note"), e("textarea", { id: "review-note", rows: 3, value: reviewDraft.reviewNote, onChange: (event) => updateDraft("reviewNote", event.target.value) })),
+          e("div", { className: "field" }, e("label", { htmlFor: "review-recommendation" }, "Reviewed recommendation"), e("textarea", { id: "review-recommendation", rows: 3, value: reviewDraft.reviewedRecommendation, onChange: (event) => updateDraft("reviewedRecommendation", event.target.value) })),
+          e("div", { className: "field" }, e("label", { htmlFor: "review-decision" }, "Review decision"), e("select", { id: "review-decision", value: reviewDraft.reviewDecision, onChange: (event) => updateDraft("reviewDecision", event.target.value) }, e("option", { value: "" }, "No decision"), ["accepted", "rejected", "adjusted", "needs_followup", "confirmed"].map((value) => e("option", { value, key: value }, value)))),
+          e("label", { className: "field-note" }, e("input", { type: "checkbox", checked: reviewDraft.suppressed, onChange: (event) => updateDraft("suppressed", event.target.checked) }), " Suppress this finding in executive priorities"),
+          reviewDraft.suppressed && e("div", { className: "field" }, e("label", { htmlFor: "review-suppression-reason" }, "Suppression reason"), e("textarea", { id: "review-suppression-reason", rows: 2, value: reviewDraft.suppressionReason, onChange: (event) => updateDraft("suppressionReason", event.target.value) })),
+          e("div", { className: "success-actions" }, e("button", { className: "ghost", type: "button", onClick: onRefresh }, "Refresh review state"), e("button", { className: "primary", type: "button", onClick: onSave, disabled: !reviewDraft.findingId.trim() }, "Save changes"), e("button", { className: "ghost", type: "button", onClick: onValidate, disabled: !current || current.reviewStatus !== "in_review" }, "Validate selected revision"), e("button", { className: "ghost", type: "button", onClick: onApprove, disabled: !current || current.reviewStatus !== "validated" }, "Approve selected revision")),
+          e("div", { className: "success-actions" }, publishable && e("button", { className: "primary", type: "button", onClick: () => onPublish(current.revisionId) }, `Publish ${current.reviewStatus} revision ${current.revisionId.slice(0, 8)}`), e("button", { className: "ghost", type: "button", onClick: () => onPublish(null) }, "Publish machine report — not reviewed")),
+          reviewStatus && e("p", { className: "field-note", role: "status" }, reviewStatus),
+          e("h3", null, "Recent revision history"),
+          revisions.length ? e("ul", { className: "field-note" }, revisions.slice(-8).reverse().map((item) => e("li", { key: item.revisionId }, `${item.revisionId.slice(0, 8)} · ${item.reviewStatus} · ${item.reviewerRole || "reviewer"} · ${item.createdAt || "timestamp unavailable"}`))) : e("p", { className: "field-note" }, "No saved review revisions yet.")
         );
       }
 

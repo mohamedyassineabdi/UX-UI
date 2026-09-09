@@ -938,6 +938,13 @@ def render_index_html(report_data: Dict[str, Any]) -> str:
     </header>
 
     <main>
+      <section class="section-block" aria-label="Report integrity">
+        <div class="section-head">
+          <p class="eyebrow">Report integrity</p>
+          <h2>Machine audit — not reviewed</h2>
+        </div>
+        <p>Scope, collection coverage, and measurement coverage are reported from this run and are not interchangeable. Methodology reflects recorded crawler, deterministic checks, and evidence artifacts only. Limitations: automated accessibility checks are not full WCAG conformance; any laboratory performance measurement is not field/CrUX data; complex contrast and logical focus order may require human review.</p>
+      </section>
       <section id="hero" class="hero-panel">
         <div class="hero-copy">
           <p class="eyebrow">Automated UX/UI Audit</p>

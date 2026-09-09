@@ -20,7 +20,7 @@ class JobStore:
     backend is configured; a local SQLite file must never be treated as ECS locking.
     """
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 3
 
     def __init__(self, database_path: Path | str):
         self.path = Path(database_path)
@@ -57,7 +57,7 @@ class JobStore:
         connection = self._connection()
         connection.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at REAL NOT NULL)")
         applied = {row[0] for row in connection.execute("SELECT version FROM schema_migrations")}
-        if self.SCHEMA_VERSION not in applied:
+        if 1 not in applied:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -102,7 +102,109 @@ class JobStore:
                 CREATE INDEX IF NOT EXISTS job_events_job_idx ON job_events(job_id, id);
                 """
             )
-            connection.execute("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)", (self.SCHEMA_VERSION, time.time()))
+            connection.execute("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)", (1, time.time()))
+        if 2 not in applied:
+            connection.executescript("""
+                CREATE TABLE IF NOT EXISTS audit_revisions (
+                  revision_id TEXT PRIMARY KEY, audit_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                  base_revision_id TEXT, reviewer_id TEXT NOT NULL, reviewer_role TEXT NOT NULL,
+                  state TEXT NOT NULL, changes_json TEXT NOT NULL, reason TEXT NOT NULL,
+                  created_at REAL NOT NULL, validated_at REAL, approved_at REAL
+                );
+                CREATE INDEX IF NOT EXISTS audit_revisions_audit_idx ON audit_revisions(audit_id, created_at);
+                CREATE TABLE IF NOT EXISTS audit_review_events (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT, audit_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                  revision_id TEXT, actor_id TEXT NOT NULL, actor_role TEXT NOT NULL, event TEXT NOT NULL,
+                  created_at REAL NOT NULL, request_id TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS audit_review_events_audit_idx ON audit_review_events(audit_id, id);
+            """)
+            connection.execute("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)", (2, time.time()))
+        if 3 not in applied:
+            connection.executescript("""
+                CREATE TABLE IF NOT EXISTS audit_publications (
+                  publication_id TEXT PRIMARY KEY, audit_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                  revision_id TEXT, publication_type TEXT NOT NULL, published_by TEXT NOT NULL,
+                  published_at REAL NOT NULL, status TEXT NOT NULL, publication_url TEXT NOT NULL DEFAULT '',
+                  snapshot_json TEXT NOT NULL, failure_reason TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS audit_publications_audit_idx ON audit_publications(audit_id, published_at);
+                CREATE INDEX IF NOT EXISTS audit_publications_revision_idx ON audit_publications(revision_id, published_at);
+            """)
+            connection.execute("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)", (3, time.time()))
+
+    @staticmethod
+    def _review_row(row: sqlite3.Row | None) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        return {"revisionId": row["revision_id"], "auditId": row["audit_id"], "baseRevisionId": row["base_revision_id"],
+                "reviewerId": row["reviewer_id"], "reviewerRole": row["reviewer_role"], "reviewStatus": row["state"],
+                "changes": json.loads(row["changes_json"]), "reason": row["reason"], "createdAt": row["created_at"],
+                "validatedAt": row["validated_at"], "approvedAt": row["approved_at"]}
+
+    def review_summary(self, audit_id: str) -> dict[str, Any]:
+        row = self._connection().execute("SELECT * FROM audit_revisions WHERE audit_id=? ORDER BY created_at DESC LIMIT 1", (audit_id,)).fetchone()
+        review = self._review_row(row)
+        return {"reviewStatus": review["reviewStatus"] if review else "unreviewed", "currentRevision": review["revisionId"] if review else None,
+                "validatedAt": review["validatedAt"] if review else None, "approvedAt": review["approvedAt"] if review else None}
+
+    def get_review(self, audit_id: str) -> dict[str, Any]:
+        current = self.review_summary(audit_id)
+        rows = self._connection().execute("SELECT * FROM audit_revisions WHERE audit_id=? ORDER BY created_at", (audit_id,)).fetchall()
+        return {**current, "revisions": [self._review_row(row) for row in rows]}
+
+    def create_revision(self, audit_id: str, *, expected_revision_id: str | None, reviewer_id: str, reviewer_role: str, changes: dict[str, Any], reason: str, request_id: str = "") -> dict[str, Any]:
+        connection = self._connection(); connection.execute("BEGIN IMMEDIATE")
+        try:
+            current = connection.execute("SELECT * FROM audit_revisions WHERE audit_id=? ORDER BY created_at DESC LIMIT 1", (audit_id,)).fetchone()
+            current_id = str(current["revision_id"]) if current else None
+            if expected_revision_id != current_id:
+                raise RuntimeError("review_conflict")
+            revision_id = uuid.uuid4().hex
+            now = time.time()
+            connection.execute("INSERT INTO audit_revisions(revision_id,audit_id,base_revision_id,reviewer_id,reviewer_role,state,changes_json,reason,created_at) VALUES (?,?,?,?,?,?,?,?,?)", (revision_id, audit_id, current_id, reviewer_id, reviewer_role, "in_review", json.dumps(changes, ensure_ascii=False, sort_keys=True), reason, now))
+            connection.execute("INSERT INTO audit_review_events(audit_id,revision_id,actor_id,actor_role,event,created_at,request_id) VALUES (?,?,?,?,?,?,?)", (audit_id, revision_id, reviewer_id, reviewer_role, "revision_created", now, request_id))
+            connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK"); raise
+        return self._review_row(self._connection().execute("SELECT * FROM audit_revisions WHERE revision_id=?", (revision_id,)).fetchone()) or {}
+
+    def transition_review(self, audit_id: str, revision_id: str, *, actor_id: str, actor_role: str, target: str, request_id: str = "") -> dict[str, Any]:
+        allowed = {"in_review": {"changes_requested", "validated"}, "changes_requested": {"in_review"}, "validated": {"approved"}}
+        connection = self._connection(); connection.execute("BEGIN IMMEDIATE")
+        try:
+            row = connection.execute("SELECT * FROM audit_revisions WHERE revision_id=? AND audit_id=?", (revision_id, audit_id)).fetchone()
+            if not row: raise ValueError("Review revision not found.")
+            if target not in allowed.get(str(row["state"]), set()): raise ValueError("Invalid review state transition.")
+            now = time.time(); fields = {"state": target}
+            if target == "validated": fields["validated_at"] = now
+            if target == "approved": fields["approved_at"] = now
+            assignment = ", ".join(f"{key}=?" for key in fields)
+            connection.execute(f"UPDATE audit_revisions SET {assignment} WHERE revision_id=?", (*fields.values(), revision_id))
+            connection.execute("INSERT INTO audit_review_events(audit_id,revision_id,actor_id,actor_role,event,created_at,request_id) VALUES (?,?,?,?,?,?,?)", (audit_id, revision_id, actor_id, actor_role, target, now, request_id)); connection.execute("COMMIT")
+        except Exception:
+            connection.execute("ROLLBACK"); raise
+        return self._review_row(self._connection().execute("SELECT * FROM audit_revisions WHERE revision_id=?", (revision_id,)).fetchone()) or {}
+
+    def get_revision(self, audit_id: str, revision_id: str) -> dict[str, Any] | None:
+        return self._review_row(self._connection().execute("SELECT * FROM audit_revisions WHERE audit_id=? AND revision_id=?", (audit_id, revision_id)).fetchone())
+
+    def create_publication(self, audit_id: str, *, revision_id: str | None, publication_type: str, published_by: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+        publication_id = uuid.uuid4().hex; now = time.time()
+        self._connection().execute("INSERT INTO audit_publications(publication_id,audit_id,revision_id,publication_type,published_by,published_at,status,snapshot_json) VALUES (?,?,?,?,?,?,?,?)", (publication_id, audit_id, revision_id, publication_type, published_by, now, "pending", json.dumps(snapshot, ensure_ascii=False, sort_keys=True)))
+        self.event(audit_id, "info", "publication_started", f"Publication {publication_id} started.")
+        return self.get_publication(audit_id, publication_id) or {}
+
+    def finish_publication(self, audit_id: str, publication_id: str, *, url: str = "", failure_reason: str = "", snapshot: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        status = "failed" if failure_reason else "succeeded"
+        self._connection().execute("UPDATE audit_publications SET status=?,publication_url=?,failure_reason=?,snapshot_json=COALESCE(?, snapshot_json) WHERE publication_id=? AND audit_id=?", (status, url, failure_reason[:1000], json.dumps(snapshot, ensure_ascii=False, sort_keys=True) if snapshot else None, publication_id, audit_id))
+        self.event(audit_id, "error" if failure_reason else "info", "publication_failed" if failure_reason else "publication_succeeded", f"Publication {publication_id} {status}.")
+        return self.get_publication(audit_id, publication_id)
+
+    def get_publication(self, audit_id: str, publication_id: str) -> dict[str, Any] | None:
+        row = self._connection().execute("SELECT * FROM audit_publications WHERE audit_id=? AND publication_id=?", (audit_id, publication_id)).fetchone()
+        if row is None: return None
+        return {"publicationId": row["publication_id"], "auditId": row["audit_id"], "revisionId": row["revision_id"], "publicationType": row["publication_type"], "publishedBy": row["published_by"], "publishedAt": row["published_at"], "publicationStatus": row["status"], "publicationUrl": row["publication_url"], "snapshot": json.loads(row["snapshot_json"]), "failureReason": row["failure_reason"]}
 
     @staticmethod
     def _row(row: sqlite3.Row | None, events: list[str] | None = None) -> dict[str, Any] | None:

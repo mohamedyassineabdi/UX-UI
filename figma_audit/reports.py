@@ -4755,6 +4755,7 @@ def build_detection_review_report(
         <p class="eyebrow">UX/UI Draft Detection Review</p>
         <h1>Figma audit report</h1>
         <p class="hero-lead">Executive review of the visible Figma design through {_html(detection_result.summary.criteria_total)} axes of UX/UI analysis.</p>
+        <p class="hero-subcopy"><strong>Review status: Machine audit — not reviewed.</strong> Scope is limited to the Figma pages, frames, components, and rendered surfaces available to this run. Methodology reflects recorded deterministic checks, visible evidence, and any configured AI/VLM review; VLM output is probabilistic. Limitations include representative sampling, automated accessibility not being full WCAG conformance, and visual/focus-order questions requiring human review.</p>
         <div class="hero-meta">
           <div><span>Criteria with problems</span><strong>{_html(actionable_criterion_count)}</strong></div>
           <div><span>Shown issues</span><strong>{_html(len(actionable_issue_list))}</strong></div>

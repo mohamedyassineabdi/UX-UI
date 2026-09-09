@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import logging
@@ -28,7 +29,7 @@ from urllib.parse import quote, unquote, urlparse
 from dotenv import load_dotenv
 from PIL import Image, UnidentifiedImageError
 
-from src.audit.workspace import AuditWorkspace
+from src.audit.workspace import AuditWorkspace, atomic_write_json, atomic_write_text
 from src.jobs import AuditStorageManager, AuditWorker, JobStatus, JobStore
 from src.security.auth import AuthenticatedUser, AuthenticationError, authenticate_bearer, validate_auth_configuration
 from src.security.network_policy import UnsafeURLError, validate_public_url
@@ -367,6 +368,7 @@ def _artifact_job_id(target: Path) -> str:
 
 def _snapshot_for_request(job: dict[str, Any], handler: BaseHTTPRequestHandler) -> dict[str, Any]:
     payload = _snapshot_job(job)
+    payload.update(JOB_STORE.review_summary(str(job.get("id") or "")))
     job_id = str(payload.get("id") or "").strip()
     result_url = str(payload.get("resultUrl") or "")
     if (
@@ -382,6 +384,30 @@ def _snapshot_for_request(job: dict[str, Any], handler: BaseHTTPRequestHandler) 
     if result_url.startswith("/"):
         payload["localResultUrl"] = result_url
     return payload
+
+
+def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tuple[dict[str, Any], str]:
+    workspace = AuditWorkspace(job_id, AUDITS_DIR)
+    source = workspace.gtm_audit if workspace.gtm_audit.is_file() else workspace.audit_results
+    try:
+        machine = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        machine = {}
+    from src.report.reviewed_report import render_reviewed_report, reviewed_report_context
+    context = reviewed_report_context(audit_id=job_id, machine=machine, revision=revision)
+    return context, render_reviewed_report(context)
+
+
+def _write_publication_snapshot(job_id: str, publication: dict[str, Any], revision: dict[str, Any] | None) -> dict[str, Any]:
+    context, rendered = _machine_report_context(job_id, revision)
+    workspace = AuditWorkspace(job_id, AUDITS_DIR)
+    target = workspace.publication / publication["publicationId"]
+    target.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(target / "index.html", rendered)
+    digest = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+    metadata = {"publicationId": publication["publicationId"], "auditId": job_id, "revisionId": publication.get("revisionId"), "publicationType": publication["publicationType"], "snapshotHash": digest, "renderedAt": time.time()}
+    atomic_write_json(target / "snapshot.json", metadata)
+    return {"snapshotPath": str((target / "index.html").relative_to(workspace.root)), "snapshotHash": digest, "reportContext": context}
 
 
 def _append_log(job_id: str, line: str) -> None:
@@ -1002,11 +1028,20 @@ def _local_audit_static_path(request_path: str) -> Path | None:
     return None
 
 
-def _publish_job_report(job: dict[str, Any]) -> str:
+def _publish_job_report(job: dict[str, Any], publication: dict[str, Any] | None = None) -> str:
     if str(job.get("status") or "") != "completed":
         raise ValueError("Only completed audits can be published.")
     job_id = str(job.get("id") or "")
-    index_path = _local_audit_static_path(f"/audits/{job_id}/")
+    if publication and publication.get("publicationType") == "reviewed":
+        snapshot = publication.get("snapshot") if isinstance(publication.get("snapshot"), dict) else {}
+        workspace = AuditWorkspace(job_id, AUDITS_DIR)
+        relative = str(snapshot.get("snapshotPath") or "")
+        index_path = (workspace.root / relative).resolve()
+        expected_hash = str(snapshot.get("snapshotHash") or "")
+        if not relative or not _inside(index_path, workspace.publication) or not index_path.is_file() or hashlib.sha256(index_path.read_bytes()).hexdigest() != expected_hash:
+            raise ValueError("Reviewed publication snapshot is unavailable or failed integrity verification.")
+    else:
+        index_path = _local_audit_static_path(f"/audits/{job_id}/")
     if not index_path or index_path.is_symlink() or index_path.parent.name != job_id:
         raise ValueError("The immutable machine-generated report is unavailable.")
     from src.gtm_audit.vercel_static_deploy import publish_selected_report
@@ -1606,6 +1641,8 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
     def _require_owned_job(self, job_id: str, user: AuthenticatedUser) -> dict[str, Any] | None:
         job = _owned_job(job_id, user)
         if job is None:
+            if self.command == "POST":
+                self._discard_small_body()
             self._send_json({"error": "Audit job not found."}, HTTPStatus.NOT_FOUND)
         return job
 
@@ -1759,6 +1796,24 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.INTERNAL_SERVER_ERROR,
                 )
             return
+        if parsed.path.startswith("/api/audits/") and "/review-report/" in parsed.path:
+            parts = [part for part in unquote(parsed.path).split("/") if part]
+            if len(parts) != 5:
+                self._send_json({"error": "Not found."}, HTTPStatus.NOT_FOUND); return
+            job_id, revision_id = parts[2], parts[4]
+            if not self._require_owned_job(job_id, user): return
+            revision = JOB_STORE.get_revision(job_id, revision_id)
+            if not revision:
+                self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
+            _context, rendered = _machine_report_context(job_id, revision)
+            body = rendered.encode("utf-8"); self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            return
+        if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/review"):
+            job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/review").strip("/"))
+            if not self._require_owned_job(job_id, user):
+                return
+            self._send_json(JOB_STORE.get_review(job_id))
+            return
         if parsed.path.startswith("/api/audits/"):
             job_id = unquote(parsed.path.rsplit("/", 1)[-1])
             job = self._require_owned_job(job_id, user)
@@ -1799,6 +1854,31 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
         if user is None:
             return
 
+        if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/revisions"):
+            job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/revisions").strip("/"))
+            if not self._require_owned_job(job_id, user): return
+            try:
+                from src.audit.review_schema import validate_revision_payload
+                expected, changes, reason = validate_revision_payload(self._read_json_body())
+                revision = JOB_STORE.create_revision(job_id, expected_revision_id=expected, reviewer_id=user.id, reviewer_role=user.role, changes=changes, reason=reason, request_id=self._request_id())
+                self._send_json(revision, HTTPStatus.CREATED)
+            except RuntimeError as exc:
+                if str(exc) == "review_conflict": self._send_json({"error": "Review changed; refresh before saving.", "requestId": self._request_id()}, HTTPStatus.CONFLICT)
+                else: self._internal_error("review_revision_failed", exc)
+            except ValueError as exc: self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+
+        for suffix, target in (("/validate", "validated"), ("/approve", "approved")):
+            if parsed.path.startswith("/api/audits/") and parsed.path.endswith(suffix):
+                job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix(suffix).strip("/"))
+                if not self._require_owned_job(job_id, user): return
+                try:
+                    revision_id = str(self._read_json_body().get("revisionId") or "")
+                    revision = JOB_STORE.transition_review(job_id, revision_id, actor_id=user.id, actor_role=user.role, target=target, request_id=self._request_id())
+                    self._send_json(revision)
+                except ValueError as exc: self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+                return
+
         if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/cancel"):
             job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/cancel").strip("/"))
             if not self._require_owned_job(job_id, user):
@@ -1816,14 +1896,34 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             if not job:
                 return
             try:
+                request = self._read_json_body()
+                revision_id = request.get("revisionId")
+                if revision_id is not None and (not isinstance(revision_id, str) or len(revision_id) != 32):
+                    raise ValueError("Invalid revisionId.")
+                if revision_id:
+                    revision = JOB_STORE.get_revision(job_id, revision_id)
+                    if not revision:
+                        self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
+                    if revision["reviewStatus"] not in {"validated", "approved"}:
+                        self._send_json({"error": "Reviewed publication requires a validated revision."}, HTTPStatus.CONFLICT); return
+                    publication_type = "reviewed"
+                    snapshot = {"auditId": job_id, "revisionId": revision_id, "review": revision}
+                else:
+                    publication_type = "machine_unreviewed"
+                    snapshot = {"auditId": job_id, "revisionId": None, "reviewStatus": "unreviewed"}
+                publication = JOB_STORE.create_publication(job_id, revision_id=revision_id, publication_type=publication_type, published_by=user.id, snapshot=snapshot)
+                snapshot = {**snapshot, **_write_publication_snapshot(job_id, publication, revision if revision_id else None)}
                 JOB_STORE.update(job_id, publicationStatus="running", event="publication_started")
-                url = _publish_job_report(job)
+                publishable = {**publication, "snapshot": snapshot}
+                url = _publish_job_report(job, publishable) if publication_type == "reviewed" else _publish_job_report(job)
                 JOB_STORE.update(job_id, publicationStatus="completed", publicationUrl=url, event="publication_completed")
-                self._send_json({"url": url})
+                completed = JOB_STORE.finish_publication(job_id, publication["publicationId"], url=url, snapshot=snapshot)
+                self._send_json({"url": url, "publication": completed})
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             except Exception:
                 JOB_STORE.update(job_id, publicationStatus="failed", event="publication_failed")
+                if "publication" in locals(): JOB_STORE.finish_publication(job_id, publication["publicationId"], failure_reason="Report publication failed.")
                 self._send_json({"error": "Report publication failed."}, HTTPStatus.BAD_GATEWAY)
             return
 

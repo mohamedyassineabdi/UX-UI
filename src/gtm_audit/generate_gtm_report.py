@@ -1375,6 +1375,8 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     if coverage_summary:
         status = clean_text(coverage_summary.get("coverageStatus")) or "unknown"
         coverage_banner = f'<section style="margin:20px 0;padding:16px;border:2px solid {"#cf513f" if status == "incomplete" else "#11886e"};border-radius:10px"><strong>Audit scope: deterministic representative page sample ({html.escape(status)})</strong><br>Discovered: {safe_int(coverage_summary.get("discovered"))} · Selected: {safe_int(coverage_summary.get("selected"))} · Completed: {safe_int(coverage_summary.get("completed"))} · Failed: {safe_int(coverage_summary.get("failed"))} · Excluded: {safe_int(coverage_summary.get("excluded"))} · Coverage: {float(coverage_summary.get("coverageRatio") or 0) * 100:.0f}%</section>'
+    scope_label = "screens/actions explored within configured exploration bounds" if is_live_mobile_audit else "uploaded screenshots/surfaces analyzed" if is_screenshot_audit else "discovered pages and the deterministic selected sample"
+    integrity_banner = f'''<section style="margin:20px 0;padding:16px;border:1px solid #687386;border-radius:10px"><strong>Review status: Machine audit — not reviewed</strong><br><strong>Scope:</strong> {html.escape(scope_label)}.<br><strong>Collection coverage:</strong> collection results are reported separately from measurement coverage; unavailable measurements are not inferred.<br><strong>Methodology and provenance:</strong> only the methods and evidence recorded for this run are represented below.<br><strong>Limitations:</strong> representative sampling; automated accessibility checks are not full WCAG conformance; Lighthouse results are laboratory measurements rather than field/CrUX data; complex contrast and logical focus order may require human review.</section>'''
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -2963,6 +2965,7 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
   </style>
 </head>
 <body>
+  {integrity_banner}
   {coverage_banner}
   <div class="shell">
     <header class="topbar">
