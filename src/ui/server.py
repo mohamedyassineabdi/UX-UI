@@ -5,7 +5,6 @@ import hashlib
 import io
 import json
 import logging
-import mimetypes
 import os
 import queue
 import re
@@ -34,10 +33,13 @@ from src.jobs import AuditStorageManager, AuditWorker, JobStatus, JobStore
 from src.security.auth import AuthenticatedUser, AuthenticationError, authenticate_bearer, validate_auth_configuration
 from src.security.network_policy import UnsafeURLError, validate_public_url
 from src.security.rate_limit import SlidingWindowRateLimiter
+from src.ui.http_helpers import read_json_body, send_file, send_json
+from src.ui.mobile_service import find_launchable_app, friendly_app_label, is_android_system_package, parse_adb_devices
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+FRONTEND_BUILD_DIR = STATIC_DIR / "app"
 GENERATED_DIR = ROOT_DIR / "shared" / "generated"
 AUDITS_DIR = ROOT_DIR / "shared" / "audits"
 DETAILED_REPORT_DIR = GENERATED_DIR / "audit-report"
@@ -632,33 +634,15 @@ def _validate_required_text(value: str, field_label: str) -> str:
 
 
 def _friendly_app_label(package_name: str, activity_name: str = "") -> str:
-    package_tail = str(package_name or "").strip().split(".")[-1]
-    activity_tail = str(activity_name or "").strip().split("/")[-1].split(".")[-1]
-    generic_activity_names = {"", "mainactivity", "launcheractivity", "splashactivity"}
-    raw = package_tail if activity_tail.lower() in generic_activity_names else activity_tail or package_tail or "Android App Audit"
-    raw = raw.replace("_", " ").replace("-", " ").strip()
-    if not raw:
-        return "Android App Audit"
-    if raw.lower() == "mymg":
-        return "MyMG"
-    return " ".join(part.capitalize() for part in re.split(r"\s+", raw))
+    return friendly_app_label(package_name, activity_name)
 
 
 def _is_android_system_package(package_name: str) -> bool:
-    clean = str(package_name or "").strip().lower()
-    if not clean:
-        return True
-    return any(clean == prefix.rstrip(".") or clean.startswith(prefix) for prefix in ANDROID_SYSTEM_PACKAGE_PREFIXES)
+    return is_android_system_package(package_name, ANDROID_SYSTEM_PACKAGE_PREFIXES)
 
 
 def _find_launchable_app_for_package(launchable_apps: list[dict[str, str]], package_name: str) -> dict[str, str] | None:
-    clean_package = str(package_name or "").strip()
-    if not clean_package:
-        return None
-    for app in launchable_apps:
-        if str(app.get("appPackage") or "").strip() == clean_package:
-            return app
-    return None
+    return find_launchable_app(launchable_apps, package_name)
 
 
 def _first_user_launchable_app(launchable_apps: list[dict[str, str]]) -> dict[str, str] | None:
@@ -669,26 +653,7 @@ def _first_user_launchable_app(launchable_apps: list[dict[str, str]]) -> dict[st
 
 
 def _parse_adb_devices(raw_output: str) -> list[dict[str, str]]:
-    devices: list[dict[str, str]] = []
-    for line in (raw_output or "").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.lower().startswith("list of devices"):
-            continue
-        parts = stripped.split()
-        if len(parts) < 2:
-            continue
-        serial, state = parts[0], parts[1]
-        extras = {token.split(":", 1)[0]: token.split(":", 1)[1] for token in parts[2:] if ":" in token}
-        devices.append(
-            {
-                "udid": serial,
-                "state": state,
-                "model": extras.get("model", "").replace("_", " "),
-                "device": extras.get("device", "").replace("_", " "),
-                "product": extras.get("product", "").replace("_", " "),
-            }
-        )
-    return devices
+    return parse_adb_devices(raw_output)
 
 
 def _foreground_activity(adb_path: str, udid: str = "") -> tuple[str, str]:
@@ -1238,7 +1203,7 @@ def _run_audit_job(job_id: str) -> None:
     try:
         local_report_url = _package_local_report(workspace.report, workspace.publication, job_id)
     except Exception as exc:
-        _set_job(job_id, status="failed", error=f"Local editable report packaging failed: {exc}")
+        _set_job(job_id, status="failed", error=f"Local reviewed report packaging failed: {exc}")
         return
     _set_job(
         job_id,
@@ -1326,7 +1291,7 @@ def _run_screenshot_audit_job(job_id: str) -> None:
     try:
         local_report_url = _package_local_report(report_dir, vercel_dir, job_id)
     except Exception as exc:
-        _set_job(job_id, status="failed", error=f"Local editable report packaging failed: {exc}")
+        _set_job(job_id, status="failed", error=f"Local reviewed report packaging failed: {exc}")
         return
     _set_job(
         job_id,
@@ -1607,7 +1572,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         connect_sources = " ".join(sorted(allowed_origins))
-        self.send_header("Content-Security-Policy", f"default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+        self.send_header("Content-Security-Policy", f"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -1653,14 +1618,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
         return False
 
     def _send_json(self, payload: Any, status: HTTPStatus = HTTPStatus.OK, headers: dict[str, str] | None = None) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        for name, value in (headers or {}).items():
-            self.send_header(name, value)
-        self.end_headers()
-        self.wfile.write(body)
+        send_json(self, payload, status, headers)
 
     def _internal_error(self, event: str, exc: Exception) -> None:
         LOG.exception("request_id=%s event=%s", self._request_id(), event)
@@ -1689,36 +1647,10 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
         return {"status": "ok" if status == HTTPStatus.OK else "degraded", "service": "ux-ui-auditor", "checks": checks}, status
 
     def _send_file(self, file_path: Path) -> None:
-        if not file_path.exists() or not file_path.is_file():
-            self.send_error(HTTPStatus.NOT_FOUND, "File not found")
-            return
-        guessed_type, _encoding = mimetypes.guess_type(str(file_path))
-        content_type = guessed_type or "application/octet-stream"
-        if content_type.startswith("text/") or content_type in {"application/javascript", "application/json"}:
-            content_type = f"{content_type}; charset=utf-8"
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(file_path.stat().st_size))
-        self.send_header("Cache-Control", "public, max-age=300")
-        self.end_headers()
-        with file_path.open("rb") as source:
-            shutil.copyfileobj(source, self.wfile, length=64 * 1024)
-        self.wfile.flush()
+        send_file(self, file_path)
 
     def _read_json_body(self) -> dict[str, Any]:
-        length = int(self.headers.get("Content-Length", "0") or "0")
-        if length < 0 or length > MAX_JSON_BODY_BYTES:
-            if 0 < length <= MAX_MULTIPART_BODY_BYTES:
-                self.rfile.read(length)
-            raise ValueError(f"JSON request exceeds the {MAX_JSON_BODY_BYTES}-byte limit.")
-        raw = self.rfile.read(length) if length else b"{}"
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValueError("Request body must be valid JSON.") from exc
-        if not isinstance(data, dict):
-            raise ValueError("Request body must be a JSON object.")
-        return data
+        return read_json_body(self, max_json_bytes=MAX_JSON_BODY_BYTES, max_discard_bytes=MAX_MULTIPART_BODY_BYTES)
 
     def do_OPTIONS(self) -> None:
         origin = (self.headers.get("Origin") or "").strip()
@@ -1739,7 +1671,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/" or parsed.path.startswith("/static/") or (not parsed.path.startswith(("/api/", "/audits/", "/artifacts/"))):
             if parsed.path == "/":
-                self._send_file(STATIC_DIR / "index.html")
+                self._send_file(FRONTEND_BUILD_DIR / "index.html")
                 return
             if parsed.path.startswith("/static/"):
                 rel = unquote(parsed.path.removeprefix("/static/"))

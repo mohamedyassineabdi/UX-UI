@@ -1,0 +1,1 @@
+main { max-width:980px; margin:0 auto; padding:var(--space-3); } header { margin-bottom:var(--space-2); } .card { background:var(--color-surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:var(--space-2); margin:var(--space-2) 0; } .actions { display:flex; flex-wrap:wrap; gap:var(--space-1); margin-top:var(--space-2); }

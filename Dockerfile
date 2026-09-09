@@ -29,6 +29,8 @@ RUN python -m pip install --no-cache-dir uv==0.9.28 \
 
 COPY . .
 
+RUN npm run build
+
 RUN groupadd --system auditor \
     && useradd --system --gid auditor --home-dir /app --shell /usr/sbin/nologin auditor \
     && mkdir -p /app/shared/generated /app/shared/output \

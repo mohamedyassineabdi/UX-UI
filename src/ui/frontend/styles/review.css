@@ -1,0 +1,1 @@
+.review textarea { min-height:5rem; } .review li { overflow-wrap:anywhere; } .error { background:#542b3a; color:white; border-radius:8px; padding:var(--space-2); }

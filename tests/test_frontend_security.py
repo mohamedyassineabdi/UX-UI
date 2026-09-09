@@ -7,20 +7,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_external_launcher_scripts_are_exact_and_have_integrity():
+def test_frontend_source_has_no_runtime_library_cdn_dependencies():
     html = (ROOT / "src" / "ui" / "static" / "index.html").read_text(encoding="utf-8")
-    tags = re.findall(r"<script\b[^>]*\bsrc=\"https://[^\"]+\"[^>]*>", html)
-    assert tags
-    for tag in tags:
-        assert "integrity=\"sha384-" in tag
-        assert "crossorigin=\"anonymous\"" in tag
-        assert re.search(r"@[0-9]+\.[0-9]+\.[0-9]+/", tag)
+    assert not re.search(r"https://(?:unpkg\.com|cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com|esm\.sh)/(?:react|react-dom|gsap)", html)
+    source_shell = (ROOT / "src" / "ui" / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert 'src="/main.jsx"' in source_shell
+
+
+def test_vite_build_targets_the_python_static_directory():
+    config = (ROOT / "vite.config.mjs").read_text(encoding="utf-8")
+    assert 'outDir: resolve("src/ui/static/app")' in config
+    assert 'base: "/static/app/"' in config
+
+
+def test_frontend_api_client_centralizes_auth_and_review_error_metadata():
+    client = (ROOT / "src" / "ui" / "frontend" / "api" / "client.js").read_text(encoding="utf-8")
+    assert 'result.set("Authorization", `Bearer ${token}`)' in client
+    assert 'response.headers.get("x-request-id")' in client
+    assert "status: response.status" in client
+    assert "createApiClient" in client
 
 
 def test_frontend_uses_session_bearer_and_has_no_public_tunnel_default():
     html = (ROOT / "src" / "ui" / "static" / "index.html").read_text(encoding="utf-8")
     config = (ROOT / "src" / "ui" / "static" / "config.js").read_text(encoding="utf-8")
-    assert 'headers.set("Authorization", `Bearer ${portalToken}`)' in html
+    client = (ROOT / "src" / "ui" / "frontend" / "api" / "client.js").read_text(encoding="utf-8")
+    assert 'result.set("Authorization", `Bearer ${token}`)' in client
     assert "trycloudflare.com" not in config
     assert "ngrok" not in config.lower()
 

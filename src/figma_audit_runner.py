@@ -127,7 +127,7 @@ def run_figma_audit(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run a Figma UX/UI audit and generate an editable report.")
+    parser = argparse.ArgumentParser(description="Run a Figma UX/UI audit and generate a reviewed report.")
     parser.add_argument("figma_url", help="Figma file, design, proto, or board URL.")
     parser.add_argument("--job-id", default="figma-audit")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)

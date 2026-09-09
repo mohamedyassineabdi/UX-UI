@@ -4,7 +4,8 @@
   "private": true,
   "devDependencies": {
     "axe-core": "4.11.1",
-    "lighthouse": "13.4.1"
+    "lighthouse": "13.4.1",
+    "vite": "6.4.3"
   },
   "scripts": {
     "scan": "python scripts/run_pipeline.py",
@@ -18,6 +19,13 @@
     "audit:figma": "python -m src.figma_audit_runner",
     "package:gtm:vercel": "python -m src.gtm_audit.vercel_static_deploy",
     "deploy:gtm:vercel": "python -m src.gtm_audit.vercel_static_deploy --deploy",
-    "ui": "python -m src.ui.server"
+    "ui": "python -m src.ui.server",
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "gsap": "3.11.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

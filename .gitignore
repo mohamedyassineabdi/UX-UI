@@ -120,6 +120,7 @@ temp/
 # Node leftovers (if any old files remain)
 # =========================
 node_modules/
+src/ui/static/app/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

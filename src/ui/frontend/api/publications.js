@@ -1,0 +1,1 @@
+export const publishRevision = (api, id, revisionId) => api.request(`/api/audits/${encodeURIComponent(id)}/publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(revisionId ? { revisionId } : {}) }).then((response) => api.json(response, "Unable to publish report."));

@@ -24,6 +24,10 @@ jobs:
           python -m pip install uv==0.9.28
           uv sync --frozen
           npm ci --ignore-scripts
+      - name: Build the production frontend
+        run: |
+          npm run build
+          ! rg -n "unpkg\\.com/(react|react-dom|gsap)" src/ui/static/app
       - name: Run tests
         run: uv run pytest -q
       - name: Compile project modules
@@ -60,3 +64,4 @@ jobs:
         run: |
           test "$(docker image inspect ux-ui-auditor-ci --format '{{.Config.User}}')" = "auditor"
           test "$(docker image inspect ux-ui-auditor-ci --format '{{if .Config.Healthcheck}}configured{{end}}')" = "configured"
+          docker run --rm ux-ui-auditor-ci sh -c '! grep -R "unpkg.com/react\\|unpkg.com/react-dom\\|unpkg.com/gsap" /app/src/ui/static/app'

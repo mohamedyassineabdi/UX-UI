@@ -20,7 +20,7 @@ The current UX/UI scoring model uses five axes:
 ## Requirements
 
 - Python 3.10-3.12
-- Node.js if you want to use the npm script shortcuts
+- Node.js 20+ for the locally bundled frontend and audit tooling
 - Chromium for Playwright
 - Appium server and Android emulator/device for mobile audits
 - Figma personal access token for Figma audits
@@ -31,9 +31,11 @@ Install the exact frozen Python environment (the canonical inputs are `pyproject
 python -m pip install uv==0.9.28
 uv sync --frozen
 uv run python -m playwright install chromium
+npm ci --ignore-scripts
+npm run build
 ```
 
-The project uses Python modules directly, so `npm install` is only needed if you later add Node dependencies. The existing npm scripts are convenience wrappers around Python commands.
+The Python server serves the production frontend bundle from `src/ui/static/app/`. Build it with `npm run build` after changing frontend source; the production UI does not require a Vite dev server or browser CDN downloads.
 
 ## Environment
 
@@ -92,6 +94,7 @@ If your company proxy or antivirus breaks TLS validation for the Figma API, set 
 ## Run The Local UI
 
 ```bash
+npm run build
 uv run python -m src.ui.server --host 127.0.0.1 --port 8787
 ```
 
