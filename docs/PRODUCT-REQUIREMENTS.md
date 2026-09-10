@@ -1,7 +1,7 @@
 # Product Requirements
 
 **Status:** Reconstructed product requirements; approval status is not established
-**Repository baseline:** `main @ 5d9646c4daa221f43c82cd8d477144900193bdb0`
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-10
 **Audience:** Product, UX/UI, engineering, and delivery stakeholders
 **Scope:** Why UX/UI Auditor exists and what it must provide; implementation details belong in the [Technical Specification](TECHNICAL-SPECIFICATION.md).
@@ -22,11 +22,11 @@ UX/UI Auditor makes it practical to turn an inspectable website, screenshot set,
 ## Goals and in-scope capabilities
 
 - `PRD-FR-001` Accept authenticated jobs for public website URLs, image uploads, Android sessions, and Figma URLs.
-- `PRD-FR-002` Collect mode-appropriate evidence and issue a locally reviewable static report.
+- `PRD-FR-002` Collect mode-appropriate evidence, measurement, scoring, and machine audit output; support structured review and immutable publication snapshots where review is used.
 - `PRD-FR-003` For websites, record representative-sample collection coverage separately from check results.
-- `PRD-FR-004` Present findings with severity and evidence; do not manufacture unsupported page attribution.
+- `PRD-FR-004` Present findings with severity, result state, evidence, and provenance; do not manufacture unsupported page attribution.
 - `PRD-FR-005` Support the current five-axis audit taxonomy: **Performance & Task Execution** (runtime/task friction), **Flow & Architecture** (navigation and information path), **Trust & Accessibility** (visible trust and accessible interaction signals), **Visual & UI Consistency** (repeated pattern coherence), and **Content & Microcopy** (clarity of visible language/actions).
-- `PRD-FR-006` Provide durable job status, progress, cancellation, protected report access, and user ownership boundaries.
+- `PRD-FR-006` Provide durable job status, progress, cancellation, ownership boundaries, review revisions, and protected report/publication access.
 
 ## Non-goals
 
@@ -34,7 +34,7 @@ The baseline does not provide WCAG certification, legal compliance advice, penet
 
 ## Product-quality requirements
 
-- `PRD-NFR-001` Conclusions must preserve uncertainty and distinguish observed evidence from model-assisted interpretation.
+- `PRD-NFR-001` Conclusions must preserve uncertainty: automated, heuristic, lab, and model-assisted measurements remain distinguishable from field data and human judgment.
 - `PRD-NFR-002` Website collection must reject unsafe public-URL inputs and avoid state-changing interactions.
 - `PRD-NFR-003` Reports/artifacts must be protected by authenticated ownership and require durable storage if retained across ephemeral deployments.
 

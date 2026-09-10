@@ -1,7 +1,7 @@
 # Engineering Decisions
 
 **Status:** Evidence-backed ADR register
-**Repository baseline:** `main @ 5d9646c4daa221f43c82cd8d477144900193bdb0`
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-10
 **Audience:** Developers, operators, and technical stakeholders
 **Scope:** Architectural decisions, not product approval records.
@@ -16,7 +16,7 @@ Decision status is independent from rationale provenance. Status: Proposed, In p
 | ADR-003 | Isolated workspaces | Implemented / Accepted | Git-history supported |
 | ADR-004 | Representative sampling and coverage | Implemented / Accepted | Git-history supported |
 | ADR-005 | Default-deny interactions | Implemented / Accepted | Reconstructed from implementation |
-| ADR-006 | Rich result semantics and provenance | In progress | Reconstructed from working tree |
+| ADR-006 | Rich result semantics and provenance | Implemented / Accepted | Git-history supported |
 | ADR-007 | Evidence-bound AI enrichment | Implemented / Accepted | Reconstructed from implementation |
 | ADR-008 | Explicit publication | Implemented / Accepted | Explicitly documented |
 
@@ -72,13 +72,13 @@ Decision status is independent from rationale provenance. Status: Proposed, In p
 
 ## ADR-006: Rich result semantics and provenance
 
-**Decision status:** In progress
-**Rationale provenance:** Reconstructed from working tree
-**Context:** Legacy TRUE/FALSE/N/A output loses distinctions between uncertainty, non-applicability, and collection failure.
-**Decision:** Introduce outcome/applicability/measurement, stable IDs, and provenance while retaining workbook compatibility.
-**Consequences / trade-offs:** Consumers may diverge until the work is committed and integrated.
-**Evidence:** untracked `src/audit/result_model.py`, modified check/report modules, untracked `tests/test_phase2b_evidence.py`.
-**Related documents:** [Implementation Plan](IMPLEMENTATION-PLAN.md#in-progress-work), [Data Model](DATA-MODEL.md).
+**Decision status:** Implemented / Accepted
+**Rationale provenance:** Git-history supported (`32aee32`, `1e4a55a`, `3f5ae54`)
+**Context:** Legacy workbook labels lose distinctions between uncertainty, non-applicability, collection failure, and evidence attribution.
+**Decision:** Use committed result semantics for outcome/applicability/measurement, stable identifiers, and provenance; retain workbook labels as adapters.
+**Consequences / trade-offs:** Consumers must support richer structured output; measurement coverage and score confidence make missing evidence visible.
+**Evidence:** `src/audit/result_semantics.py`, `src/audit/measurement.py`, `src/gtm_audit/scoring.py`, `tests/test_phase2b_semantics.py`, `tests/test_phase3a_scoring.py`, `tests/test_phase3b_measurement.py`.
+**Related documents:** [Data Model](DATA-MODEL.md), [Architecture](ARCHITECTURE.md).
 
 ## ADR-007: Evidence-bound AI enrichment
 

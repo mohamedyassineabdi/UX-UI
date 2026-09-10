@@ -1,7 +1,7 @@
 # Security Operations
 
 **Status:** Supporting security/operations guidance
-**Repository baseline:** `main @ 5d9646c4daa221f43c82cd8d477144900193bdb0`
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-10
 **Audience:** Repository owner, operators, and maintainers
 **Scope:** Current repository posture and external release prerequisites.

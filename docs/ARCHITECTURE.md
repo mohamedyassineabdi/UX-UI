@@ -52,6 +52,7 @@ stateDiagram-v2
   running --> completed: machine audit ready
   running --> failed: pipeline error
   running --> interrupted: lease expires
+  completed --> published: machine-unreviewed snapshot
   completed --> in_review: revision created
   in_review --> changes_requested
   changes_requested --> in_review
@@ -60,7 +61,7 @@ stateDiagram-v2
   approved --> published: immutable snapshot
 ```
 
-Editing is not validation; validation is not approval; approval is not publication. Revisions are append-only, optimistic conflicts return HTTP 409, and publication names an explicit revision. The machine-unreviewed path remains distinct. Publication uses an immutable snapshot and does not accept arbitrary edited HTML.
+Editing is not validation; validation is not approval; approval is not publication. Revisions are append-only, optimistic conflicts return HTTP 409, and reviewed publication names an explicit revision. The machine-unreviewed publication path remains distinct. Publication uses an immutable snapshot and does not accept arbitrary edited HTML.
 
 ## Evidence, measurement, scoring, and storage
 

@@ -5,6 +5,7 @@
 **Last updated:** 2026-09-10
 **Audience:** Engineers, UX/UI specialists, and technical stakeholders
 **Scope:** Setup and safe orientation. See the linked specifications for detailed behavior.
+**Related documents:** [Product Requirements](docs/PRODUCT-REQUIREMENTS.md), [Product Specification](docs/PRODUCT-SPECIFICATION.md), [Technical Specification](docs/TECHNICAL-SPECIFICATION.md).
 
 UX/UI Auditor creates evidence-backed UX/UI audit reports from public websites, uploaded screenshots, Android apps, and Figma files. It combines deterministic and tool-backed checks with optional evidence-constrained AI interpretation. It is not a full-site crawler, WCAG certification, or field-performance product.
 

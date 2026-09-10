@@ -1,48 +1,31 @@
 # Engineering Checkpoint
 
 **Status:** Current handoff
-**Repository baseline:** `main @ 5d9646c4daa221f43c82cd8d477144900193bdb0`
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-10
 **Audience:** Next engineer, maintainer, product/UX handoff reader
-**Scope:** Exact observed repository/documentation state.
+**Scope:** Current remote implementation baseline and documentation integration state.
 **Related documents:** [Roadmap](ROADMAP.md), [Implementation Plan](IMPLEMENTATION-PLAN.md), [Security Operations](SECURITY_OPERATIONS.md).
 
-## Source and documentation state
+## Current baseline
 
-- Branch: `main`; exact HEAD: `5d9646c4daa221f43c82cd8d477144900193bdb0`.
-- The working tree was already dirty before this documentation work: tracked source/package changes, a deleted `figma_audit/reports.py`, and untracked package/result-model/test files exist. Do not stage them wholesale.
-- This refinement pass modifies README and `docs/`; README overlapped a pre-existing modification and must be staged interactively.
+The application uses a React/Vite frontend built into `src/ui/static/app/` and served by the Python HTTP server. A single local SQLite-backed worker system executes website, screenshot, Figma, and Android/mobile jobs. Website workspaces now include evidence manifests plus Axe and Lighthouse paths.
 
-## Committed baseline capabilities
+Committed result semantics retain outcome, applicability, measurement state, stable IDs, and provenance. Measurement coverage is separate from page collection coverage. Evidence-aware five-axis scoring uses applicable measured pass/fail rules; Lighthouse results are laboratory data and visual-model output is probabilistic. SQLite schema version 3 stores jobs/events, append-only review revisions/events, and publication snapshots.
 
-Authenticated portal users queue website, screenshot, Android/mobile, and Figma jobs in local SQLite. Local workers dispatch pipelines and package static reports. Website collection uses isolated workspaces, representative discovery/selection, coverage manifests, Playwright evidence/checks and report generation. Figma normalizes/API-analyzes design data; Android uses Appium capture/bounded exploration. Render disables screenshot and live-mobile modes, but not Figma.
+The review lifecycle is machine audit -> revision -> validation -> approval -> immutable publication snapshot. Editing, validation, approval, and publication are distinct; arbitrary edited HTML is not accepted for publication. Render disables screenshot/live-mobile execution but not Figma.
 
-## In-progress/uncommitted capabilities
+## Constraints and open decisions
 
-**In progress - present in the working tree but not part of the repository baseline:** `src/audit/result_model.py`, related check/report changes and its test introduce richer outcome/applicability/measurement, stable IDs, evidence/provenance and review semantics. Treat this as review/commit work, not current baseline behavior.
+- Single application instance: SQLite/local artifacts are not distributed infrastructure; ephemeral persistence requires external durable storage.
+- The system is not a full crawler, WCAG certification, or field-performance product.
+- Score calibration/KPI approval, hosted-mode scope, and any distributed deployment requirement remain unresolved.
+- External credential remediation remains a release prerequisite; the legacy incident path is not in reachable repository history.
 
-## Constraints, limitations, blockers, and decisions
+## Documentation integration status
 
-- Frozen baseline constraint: one application instance with local workers/pipeline subprocesses; SQLite/local artifacts are not distributed infrastructure.
-- Not a full crawler, compliance certification, or field-performance tool; AI is probabilistic; static images/designs cannot prove hidden behavior.
-- Blocker: inherited credential remediation must be confirmed externally; the cited incident path is not present in reachable repository history.
-- Open decisions: approved score calibration/KPIs, hosted mode scope, and whether distributed deployment is required.
+This checkpoint is being reconciled in a clean integration worktree from remote baseline `b49d8ac`. Local documentation commits `7245553` and `83c3fd0` were required; README and Architecture were manually reconciled against remote frontend/review changes. Do not use the original dirty worktree as a source for application behavior.
 
-## Exact next actions
+## Verification
 
-1. Engineering: review and commit/reject the existing richer-result changes with complete regression/report verification.
-2. Documentation: after that decision, update status labels/ADR-006/checkpoint to the resulting commit or rejection.
-3. Product/operations: confirm whether conditional distributed and hosted-mode work is required.
-
-## Verification actually completed
-
-| Check | Result |
-| --- | --- |
-| workspace/job/evidence subset | 25 passed |
-| discovery/isolation/dependency subset | 7 passed |
-| `python -m compileall src figma_audit navigator scripts` | passed |
-| documentation path/link/whitespace checks | passed |
-| full security/full test suite | **INCOMPLETE - neither passed nor failed.** Command: `uv run pytest tests/test_auth.py tests/test_auth_integration.py tests/test_network_policy.py tests/test_server_security.py tests/test_upload_security.py tests/test_frontend_security.py tests/test_publication_security.py -x -vv`. It reached `tests/test_auth_integration.py::test_real_auth_me_contract_and_authenticated_api_smoke` and did not complete in the command window; no repository/task evidence establishes why. |
-| Docker build | not run |
-
-Recommended future verification remains `uv sync --frozen`, full `uv run pytest -q`, and `docker build --pull=false -t ux-ui-auditor .`.
+Relevant current-baseline tests to run/retain: `tests/test_phase2b_semantics.py`, `tests/test_phase3a_scoring.py`, `tests/test_phase3b_measurement.py`, `tests/test_review_workflow.py`, `tests/test_review_ui_contract.py`, `tests/test_axe_runner.py`, and `tests/test_lighthouse_runner.py`, plus `npm run build`. Documentation validation must include links, anchors, metadata, traceability and `git diff --check`.

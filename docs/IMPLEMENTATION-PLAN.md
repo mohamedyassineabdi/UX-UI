@@ -1,7 +1,7 @@
 # Implementation Plan
 
 **Status:** Evidence-based plan; not a management commitment
-**Repository baseline:** `main @ 5d9646c4daa221f43c82cd8d477144900193bdb0`
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-10
 **Audience:** Engineering, product, and delivery stakeholders
 **Scope:** Baseline delivery, in-progress work, and conditional/proposed phases.
@@ -20,18 +20,9 @@
 **Verification:** `c9eeda9`, `506ebed`, `5d9646c`, `e009a7f`, and current tests.
 **Exit gate:** Satisfied for the single-instance baseline.
 
-## In-progress work
+## Current baseline
 
-### Rich evidence and provenance semantics
-
-**Status:** In progress - present in the working tree but not part of the repository baseline.
-**Objective:** Preserve result state, evidence/provenance, and stable IDs without collapsing uncertainty into workbook values.
-**Scope:** Changed checks/report consumers and compatibility output.
-**Dependencies:** Review/commit of existing dirty work.
-**Tasks:** Exercise pass/fail/warning/not-applicable/not-measured/collection-failure and unresolved/site-wide cases; review rendered reports.
-**Out of scope:** Score redesign.
-**Verification required:** Full regression and rendered-report review must show no consumer loss.
-**Exit gate:** Committed implementation plus documented compatibility contract. See [ADR-006](DECISIONS.md#adr-006-rich-result-semantics-and-provenance).
+Evidence/provenance semantics, measurement methodology, evidence-aware scoring, structured review, publication snapshots, and bundled frontend delivery are implemented in the remote baseline. The remaining work is validation/calibration and conditional deployment capability, not landing those features.
 
 ## Conditional work
 
