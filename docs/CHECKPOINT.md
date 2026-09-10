@@ -24,8 +24,14 @@ The review lifecycle is machine audit -> revision -> validation -> approval -> i
 
 ## Documentation integration status
 
-This checkpoint is being reconciled in a clean integration worktree from remote baseline `b49d8ac`. Local documentation commits `7245553` and `83c3fd0` were required; README and Architecture were manually reconciled against remote frontend/review changes. Do not use the original dirty worktree as a source for application behavior.
+The source-of-truth documentation is reconciled in the clean `docs/source-of-truth-integration` worktree against remote baseline `b49d8ac`. Local documentation commits `7245553` and `83c3fd0` were reconciled by `bec23c5`; do not use the original dirty worktree as a source for application behavior.
 
-## Verification
+## Final validation (2026-09-10)
 
-Relevant current-baseline tests to run/retain: `tests/test_phase2b_semantics.py`, `tests/test_phase3a_scoring.py`, `tests/test_phase3b_measurement.py`, `tests/test_review_workflow.py`, `tests/test_review_ui_contract.py`, `tests/test_axe_runner.py`, and `tests/test_lighthouse_runner.py`, plus `npm run build`. Documentation validation must include links, anchors, metadata, traceability and `git diff --check`.
+- **PASSED:** `uv sync --frozen`; `npm ci --ignore-scripts`; `npm run build`; and `uv run python -m compileall src figma_audit navigator scripts`.
+- **PASSED:** deterministic Python suite: `112 passed` with `tests/test_auth_integration.py` excluded after the full-suite attempt reached that test and the local Windows OpenSSL runtime aborted (`OPENSSL_Uplink ... no OPENSSL_Applink`) before pytest could record a result.
+- **PASSED:** explicit deterministic security suite: `53 passed` for auth, network policy, server, upload, frontend, and publication security tests.
+- **PASSED:** feature regression suite: `55 passed` for result semantics, scoring, measurement, Axe, Lighthouse, review, job queue, discovery/workspace, publication, and frontend contract/security tests.
+- **NOT VERIFIED:** `tests/test_auth_integration.py`; local Windows OpenSSL runtime abort prevents the loopback integration smoke test from completing. This is not recorded as passed or failed.
+- **NOT VERIFIED:** Docker image build; Docker CLI is installed but the local Docker Desktop Linux daemon is unavailable.
+- Documentation validation must continue to include links, anchors, Mermaid blocks, metadata, PRD/spec traceability, secret scanning, and `git diff --check` before publication.
