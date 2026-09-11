@@ -24,9 +24,9 @@ The review lifecycle is machine audit -> revision -> validation -> approval -> i
 
 ## Documentation publication state
 
-Current repository HEAD: `786eae64873373614ca2f6872d06f0358b4de43f`. Application implementation baseline: `b49d8ac0ca9b89da97629c734fa50d5245b5420b`. Phase 1 source-of-truth and Phase 2 engineering documentation are published on `origin/main`. The engineering layer provides API, database, security, testing, deployment, environment, configuration, style, and contribution guidance.
+Phase 3 documentation started from repository HEAD `69b7aca73acb9e6601f6d321ce46895f4c9550b0`. Application implementation baseline: `b49d8ac0ca9b89da97629c734fa50d5245b5420b`. Phase 1 source-of-truth and Phase 2 engineering documentation are published on `origin/main`; Phase 3 adds UX specification, design-system, content, accessibility, and analytics guidance. The five documents distinguish implemented behavior from observed conventions, recommendations, proposed work, and not-implemented capability.
 
-## Current validation (2026-09-11)
+## Current validation (2026-09-11; reconfirmed for Phase 3)
 
 | Check | Result |
 | --- | --- |

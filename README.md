@@ -64,3 +64,4 @@ Lighthouse values are laboratory measurements, not CrUX or field Core Web Vitals
 - [Implementation plan](docs/IMPLEMENTATION-PLAN.md), [decisions](docs/DECISIONS.md), [roadmap](docs/ROADMAP.md), and [checkpoint](docs/CHECKPOINT.md)
 - [Security operations](docs/SECURITY_OPERATIONS.md)
 - Engineering: [API](docs/API-SPECIFICATION.md), [database](docs/DATABASE-SPECIFICATION.md), [security](docs/SECURITY.md), [testing](docs/TESTING.md), [deployment](docs/DEPLOYMENT.md), [environment](docs/ENVIRONMENT.md), [configuration](docs/CONFIGURATION.md), [styleguide](docs/STYLEGUIDE.md), and [contributing](CONTRIBUTING.md)
+- Product/UX: [UX specification](docs/UX-SPECIFICATION.md), [design system](docs/DESIGN-SYSTEM.md), [content guidelines](docs/CONTENT-GUIDELINES.md), [accessibility](docs/ACCESSIBILITY.md), and [analytics](docs/ANALYTICS.md)
