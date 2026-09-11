@@ -18,7 +18,7 @@
 | Phase 1 core documentation | Completed | `bfb3c95` | Published on `origin/main` | Documentation milestone. |
 | Phase 2 engineering documentation | Completed | `786eae6`, `69b7aca` | Published on `origin/main` | Documentation milestone. |
 | Phase 3 product/UX documentation | Completed | `cc86999` | Published on `origin/main` | Documentation milestone. |
-| Phase 4 delivery documentation | In progress | This document set | Validation and integration evidence | No management approval implied. |
+| Phase 4 delivery documentation | Completed | `1bb6b19` | Published and integrated on `origin/main` | No management approval implied. |
 | Score calibration and reviewer validation | Proposed | [Implementation Plan](IMPLEMENTATION-PLAN.md#score-calibration-and-reviewer-validation) | Recorded product/UX approval | No KPI target established. |
 | Hosted screenshot/mobile operation | Conditional | [Roadmap](ROADMAP.md) | Compatible secured runtime and test evidence | Current Render configuration disables it. |
 | Distributed deployment | Conditional | [Implementation Plan](IMPLEMENTATION-PLAN.md#distributed-deployment) | Approved requirement and shared-store/artifact evidence | SQLite is not distributed coordination. |
