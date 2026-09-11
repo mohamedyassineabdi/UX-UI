@@ -1,7 +1,7 @@
 # Engineering Styleguide
 
 **Status:** Observed current conventions, not a new formatter policy
-**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b` (the application implementation baseline; current documentation integration is `bfb3c95`)
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-11
 **Audience:** Contributors and reviewers
 **Scope:** Conventions evidenced by the repository; no unconfigured lint/format/type rules are imposed.

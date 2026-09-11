@@ -1,7 +1,7 @@
 # Security
 
 **Status:** Current committed security architecture
-**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b` (the application implementation baseline; current documentation integration is `bfb3c95`)
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-11
 **Audience:** Engineers, security reviewers, and operators
 **Scope:** Application controls; release procedures and the inherited credential prerequisite are in [Security Operations](SECURITY_OPERATIONS.md).

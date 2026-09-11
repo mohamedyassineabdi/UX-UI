@@ -1,7 +1,7 @@
 # Testing
 
 **Status:** Current committed validation guidance
-**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b` (the application implementation baseline; current documentation integration is `bfb3c95`)
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-11
 **Audience:** Contributors, maintainers, and CI reviewers
 **Scope:** Existing automated checks and how to select them; it does not claim coverage percentages.

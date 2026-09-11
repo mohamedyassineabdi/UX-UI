@@ -22,22 +22,18 @@ The review lifecycle is machine audit -> revision -> validation -> approval -> i
 - Score calibration/KPI approval, hosted-mode scope, and any distributed deployment requirement remain unresolved.
 - External credential remediation remains a release prerequisite; the legacy incident path is not in reachable repository history.
 
-## Documentation integration status
+## Documentation publication state
 
-The source-of-truth documentation is reconciled in the clean `docs/source-of-truth-integration` worktree against remote baseline `b49d8ac`. Local documentation commits `7245553` and `83c3fd0` were reconciled by `bec23c5`; do not use the original dirty worktree as a source for application behavior.
+Current repository HEAD: `786eae64873373614ca2f6872d06f0358b4de43f`. Application implementation baseline: `b49d8ac0ca9b89da97629c734fa50d5245b5420b`. Phase 1 source-of-truth and Phase 2 engineering documentation are published on `origin/main`. The engineering layer provides API, database, security, testing, deployment, environment, configuration, style, and contribution guidance.
 
-## Phase 2 engineering documentation
+## Current validation (2026-09-11)
 
-The engineering layer now provides implementation-facing API, database, security, testing, deployment, environment, configuration, style, and contribution guidance. It is linked from the README and traces the same committed implementation baseline; detailed route/schema/variable contracts are authoritative in their respective engineering documents.
-
-Phase 2 validation: frontend install/build and Python compilation passed. The complete deterministic Python remainder passed (`112 passed`) after the full suite again stopped at `tests/test_auth_integration.py` because of the local Windows OpenSSL runtime abort; that integration test remains **NOT VERIFIED**, not passed. Explicit security tests passed (`53 passed`) and focused job/review/publication/semantics/scoring/measurement/frontend tests passed (`55 passed`). Docker remains **NOT VERIFIED** because the local Docker daemon is unavailable. The Phase 2 worktree used an external temporary virtualenv after OneDrive hardlink/cache errors prevented a worktree-local `uv sync`; the locked environment itself then installed successfully.
-
-## Final validation (2026-09-10)
-
-- **PASSED:** `uv sync --frozen`; `npm ci --ignore-scripts`; `npm run build`; and `uv run python -m compileall src figma_audit navigator scripts`.
-- **PASSED:** deterministic Python suite: `112 passed` with `tests/test_auth_integration.py` excluded after the full-suite attempt reached that test and the local Windows OpenSSL runtime aborted (`OPENSSL_Uplink ... no OPENSSL_Applink`) before pytest could record a result.
-- **PASSED:** explicit deterministic security suite: `53 passed` for auth, network policy, server, upload, frontend, and publication security tests.
-- **PASSED:** feature regression suite: `55 passed` for result semantics, scoring, measurement, Axe, Lighthouse, review, job queue, discovery/workspace, publication, and frontend contract/security tests.
-- **NOT VERIFIED:** `tests/test_auth_integration.py`; local Windows OpenSSL runtime abort prevents the loopback integration smoke test from completing. This is not recorded as passed or failed.
-- **NOT VERIFIED:** Docker image build; Docker CLI is installed but the local Docker Desktop Linux daemon is unavailable.
-- Documentation validation must continue to include links, anchors, Mermaid blocks, metadata, PRD/spec traceability, secret scanning, and `git diff --check` before publication.
+| Check | Result |
+| --- | --- |
+| Locked dependencies, frontend install/build, Python compilation | **PASSED** — `uv sync --frozen`; `npm ci --ignore-scripts`; `npm run build`; `uv run python -m compileall src figma_audit navigator scripts` |
+| Documentation validation | **PASSED** — relative links, anchors, Mermaid blocks, metadata, traceability, secret-pattern scan, and `git diff --check` |
+| Deterministic Python suite | **PASSED** — `112 passed` with `tests/test_auth_integration.py` excluded |
+| Explicit security suite | **PASSED** — `53 passed` for auth, network policy, server, upload, frontend, and publication security |
+| Feature regression suite | **PASSED** — `55 passed` for jobs, review/publication, semantics, scoring, measurement, Axe/Lighthouse, discovery/workspace, and frontend contract/security |
+| Auth integration smoke test | **NOT VERIFIED** — local Windows OpenSSL abort (`OPENSSL_Uplink ... no OPENSSL_Applink`) prevented `tests/test_auth_integration.py` from recording a result |
+| Docker image build | **NOT VERIFIED** — Docker daemon unavailable locally |

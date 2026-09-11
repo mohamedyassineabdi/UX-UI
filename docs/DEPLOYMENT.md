@@ -1,7 +1,7 @@
 # Deployment
 
 **Status:** Current committed deployment contract
-**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b` (the application implementation baseline; current documentation integration is `bfb3c95`)
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-11
 **Audience:** Operators and release engineers
 **Scope:** Docker, Render, and optional report publication; environment variable detail is in [Configuration](CONFIGURATION.md).

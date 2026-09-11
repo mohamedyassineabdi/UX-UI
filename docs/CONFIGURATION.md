@@ -1,7 +1,7 @@
 # Configuration
 
 **Status:** Current committed application configuration reference
-**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b` (the application implementation baseline; current documentation integration is `bfb3c95`)
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-11
 **Audience:** Developers and operators
 **Scope:** Application-controlled environment variables and checked-in configuration files; credentials are names only.

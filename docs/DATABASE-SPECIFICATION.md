@@ -1,7 +1,7 @@
 # Database Specification
 
 **Status:** Current committed persistence contract
-**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b` (the application implementation baseline; current documentation integration is `bfb3c95`)
+**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
 **Last updated:** 2026-09-11
 **Audience:** Backend engineers, operators, and test authors
 **Scope:** SQLite schema and lifecycle in `src/jobs/store.py`; conceptual ownership remains in [Data Model](DATA-MODEL.md).
