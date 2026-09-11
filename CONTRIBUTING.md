@@ -2,6 +2,8 @@
 
 Read the [README](README.md), [Checkpoint](docs/CHECKPOINT.md), [Product Specification](docs/PRODUCT-SPECIFICATION.md), [Technical Specification](docs/TECHNICAL-SPECIFICATION.md), [Architecture](docs/ARCHITECTURE.md), and the engineering document relevant to your change before editing.
 
+AI-assisted contributors must also follow [AI Instructions](AI-INSTRUCTIONS.md), use the task routing in [Reading Map](READING-MAP.md), and apply [Execution Rules](EXECUTION-RULES.md).
+
 ## Local work
 
 Follow [Environment](docs/ENVIRONMENT.md) and [Configuration](docs/CONFIGURATION.md), then use the checks in [Testing](docs/TESTING.md). Work in a focused feature, fix, or documentation branch. Do not pull, rebase, reset, or clean over unrelated dirty work; use a separate worktree when integration is risky.
