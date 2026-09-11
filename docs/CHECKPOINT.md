@@ -2,10 +2,10 @@
 
 **Status:** Current handoff
 **Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
-**Last updated:** 2026-09-10
+**Last updated:** 2026-09-11
 **Audience:** Next engineer, maintainer, product/UX handoff reader
 **Scope:** Current remote implementation baseline and documentation integration state.
-**Related documents:** [Roadmap](ROADMAP.md), [Implementation Plan](IMPLEMENTATION-PLAN.md), [Security Operations](SECURITY_OPERATIONS.md).
+**Related documents:** [Roadmap](ROADMAP.md), [Implementation Plan](IMPLEMENTATION-PLAN.md), [Testing](TESTING.md), [Security Operations](SECURITY_OPERATIONS.md).
 
 ## Current baseline
 
@@ -25,6 +25,12 @@ The review lifecycle is machine audit -> revision -> validation -> approval -> i
 ## Documentation integration status
 
 The source-of-truth documentation is reconciled in the clean `docs/source-of-truth-integration` worktree against remote baseline `b49d8ac`. Local documentation commits `7245553` and `83c3fd0` were reconciled by `bec23c5`; do not use the original dirty worktree as a source for application behavior.
+
+## Phase 2 engineering documentation
+
+The engineering layer now provides implementation-facing API, database, security, testing, deployment, environment, configuration, style, and contribution guidance. It is linked from the README and traces the same committed implementation baseline; detailed route/schema/variable contracts are authoritative in their respective engineering documents.
+
+Phase 2 validation: frontend install/build and Python compilation passed. The complete deterministic Python remainder passed (`112 passed`) after the full suite again stopped at `tests/test_auth_integration.py` because of the local Windows OpenSSL runtime abort; that integration test remains **NOT VERIFIED**, not passed. Explicit security tests passed (`53 passed`) and focused job/review/publication/semantics/scoring/measurement/frontend tests passed (`55 passed`). Docker remains **NOT VERIFIED** because the local Docker daemon is unavailable. The Phase 2 worktree used an external temporary virtualenv after OneDrive hardlink/cache errors prevented a worktree-local `uv sync`; the locked environment itself then installed successfully.
 
 ## Final validation (2026-09-10)
 
