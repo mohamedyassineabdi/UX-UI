@@ -24,9 +24,9 @@ The review lifecycle is machine audit -> revision -> validation -> approval -> i
 
 ## Documentation publication state
 
-Phase 3 documentation started from repository HEAD `69b7aca73acb9e6601f6d321ce46895f4c9550b0`. Application implementation baseline: `b49d8ac0ca9b89da97629c734fa50d5245b5420b`. Phase 1 source-of-truth and Phase 2 engineering documentation are published on `origin/main`; Phase 3 adds UX specification, design-system, content, accessibility, and analytics guidance. The five documents distinguish implemented behavior from observed conventions, recommendations, proposed work, and not-implemented capability.
+Phase 3 documentation started from repository HEAD `69b7aca73acb9e6601f6d321ce46895f4c9550b0`. Phase 4 started from repository HEAD `cc8699994cc952ec3a7e15e0d1d7d3aea01e62f1`. Application implementation baseline: `b49d8ac0ca9b89da97629c734fa50d5245b5420b`. Phases 1-3 are published on `origin/main`; Phase 4 adds project coordination, milestones, risks, delivery/release gates, role boundaries, and change-handling guidance. These documents do not establish management approvals, dates, named owners, SLAs, KPIs, or release commitments.
 
-## Current validation (2026-09-11; reconfirmed for Phase 3)
+## Current validation (2026-09-11; reconfirmed for Phase 4)
 
 | Check | Result |
 | --- | --- |
@@ -34,6 +34,6 @@ Phase 3 documentation started from repository HEAD `69b7aca73acb9e6601f6d321ce46
 | Documentation validation | **PASSED** — relative links, anchors, Mermaid blocks, metadata, traceability, secret-pattern scan, and `git diff --check` |
 | Deterministic Python suite | **PASSED** — `112 passed` with `tests/test_auth_integration.py` excluded |
 | Explicit security suite | **PASSED** — `53 passed` for auth, network policy, server, upload, frontend, and publication security |
-| Feature regression suite | **PASSED** — `55 passed` for jobs, review/publication, semantics, scoring, measurement, Axe/Lighthouse, discovery/workspace, and frontend contract/security |
+| Feature regression suite | **PASSED** — `63 passed` for jobs, review/publication, semantics, scoring, measurement, Axe/Lighthouse, discovery/workspace, and frontend security |
 | Auth integration smoke test | **NOT VERIFIED** — local Windows OpenSSL abort (`OPENSSL_Uplink ... no OPENSSL_Applink`) prevented `tests/test_auth_integration.py` from recording a result |
 | Docker image build | **NOT VERIFIED** — Docker daemon unavailable locally |
