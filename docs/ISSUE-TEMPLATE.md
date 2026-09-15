@@ -23,9 +23,9 @@ One clear sentence describing the problem or requested change.
 - Relevant non-secret configuration:
 
 ### Steps to reproduce
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ### Expected and actual behavior
 - Expected:
