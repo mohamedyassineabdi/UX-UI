@@ -25,7 +25,7 @@ from .common import (
     score_to_severity,
 )
 from .vision_client import run_gtm_vision_review
-from .scoring import axis_mapping, deduplicate_findings, overall_score as calculate_overall_score, score_axis
+from .scoring import axis_mapping, deduplicate_findings, overall_score as calculate_overall_score, rule_metadata, score_axis
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -146,6 +146,9 @@ def flatten_checks(checks_data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "applicability": clean_text(item.get("applicability")).lower() or "applicable",
                     "measurement": clean_text(item.get("measurement")).lower() or "measured",
                     "ruleId": clean_text(item.get("ruleId")),
+                    "machine_criterion": clean_text(item.get("machine_criterion")),
+                    "axisMethodologyVersion": 2,
+                    "auditMode": "website",
                     "findingId": clean_text(item.get("findingId")),
                     "evidenceIds": list(item.get("evidenceIds") or []),
                     "provenance": item.get("provenance") if isinstance(item.get("provenance"), dict) else {},
@@ -787,7 +790,15 @@ def axis_rows(flat_rows: List[Dict[str, Any]], axis: Dict[str, Any]) -> List[Dic
     for row in flat_rows:
         weight = axis_mapping(row).get(axis["id"])
         if weight:
-            out.append({**row, "axisWeight": weight})
+            metadata = rule_metadata(row)
+            out.append({
+                **row,
+                "axisWeight": weight,
+                "axisMethodologyVersion": 2,
+                "primaryAxis": axis["id"],
+                "secondaryTags": list(metadata.secondary_tags) if metadata else [],
+                "scoreConsequenceId": metadata.dedupe_family if metadata else "",
+            })
     return out
 
 
@@ -2029,6 +2040,7 @@ def build_payload(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
     ]
     return {
         "version": 1,
+        "axisMethodologyVersion": 2,
         "mode": "gtm",
         "generator": "src.gtm_audit.generate_gtm_audit",
         "site": profile["site"],

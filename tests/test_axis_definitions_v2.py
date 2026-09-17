@@ -61,4 +61,5 @@ def test_active_report_labels_and_scoring_registry_are_unchanged():
         "Presentation": {"ui_consistency": 1.0},
         "Visual hierarchy": {"ui_consistency": 1.0, "content_microcopy": 0.5},
     }
-    assert RULE_AXIS_MAP == {}
+    assert RULE_AXIS_MAP
+    assert all(len(mapping) == 1 for mapping in RULE_AXIS_MAP.values())

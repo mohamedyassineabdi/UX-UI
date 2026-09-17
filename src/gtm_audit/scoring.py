@@ -11,11 +11,13 @@ from dataclasses import asdict, dataclass
 from hashlib import sha256
 from typing import Any, Iterable
 
+from .rule_registry import RULE_REGISTRY, RuleMetadata, lookup_rule
+
 
 AXIS_IDS = ("task_execution", "flow_architecture", "trust_accessibility", "ui_consistency", "content_microcopy")
 
-# Deliberate methodology registry.  Keys are stable sheet/row rule keys emitted
-# by the workbook check catalogue, not prose keyword matches.
+# Legacy v1 sheet mapping is retained solely for historical interpretation.
+# Methodology-v2 scoring never falls back to it for an unmapped rule.
 SHEET_AXIS_MAP = {
     "Content": {"content_microcopy": 1.0, "trust_accessibility": 0.5},
     "Labeling": {"content_microcopy": 1.0, "task_execution": 0.5},
@@ -26,7 +28,13 @@ SHEET_AXIS_MAP = {
     "Presentation": {"ui_consistency": 1.0},
     "Visual hierarchy": {"ui_consistency": 1.0, "content_microcopy": 0.5},
 }
-RULE_AXIS_MAP: dict[str, dict[str, float]] = {}
+# Compatibility projection for callers that previously imported RULE_AXIS_MAP.
+# The typed registry in rule_registry.py is authoritative.
+RULE_AXIS_MAP: dict[str, dict[str, float]] = {
+    key: {metadata.primary_axis: 1.0}
+    for key, metadata in RULE_REGISTRY.items()
+    if metadata.primary_axis and metadata.score_eligible
+}
 
 
 @dataclass(frozen=True)
@@ -53,16 +61,54 @@ def rule_key(row: dict[str, Any]) -> str:
     return str(row.get("ruleKey") or row.get("machine_criterion") or f"{row.get('sheet', '')}:{row.get('row', '')}").strip()
 
 
+def _methodology_version(row: dict[str, Any]) -> int:
+    try:
+        return int(row.get("axis_methodology_version") or row.get("axisMethodologyVersion") or 2)
+    except (TypeError, ValueError):
+        return 2
+
+
+def rule_metadata(row: dict[str, Any]) -> RuleMetadata | None:
+    """Resolve only stable v2 registry keys; never infer from criterion prose."""
+    for key in (str(row.get("logicalRuleKey") or ""), rule_key(row), str(row.get("ruleId") or "")):
+        metadata = lookup_rule(key)
+        if metadata:
+            return metadata
+    return None
+
+
+def legacy_axis_mapping(row: dict[str, Any]) -> dict[str, float]:
+    """Explicit v1 compatibility helper; not used for v2 audit generation."""
+    if not str(row.get("ruleId") or "").startswith("rule_"):
+        return {}
+    return dict(SHEET_AXIS_MAP.get(str(row.get("sheet") or ""), {}))
+
+
 def axis_mapping(row: dict[str, Any]) -> dict[str, float]:
-    """Return intentional mapping only; unknown rules are not scored."""
+    """Return one v2 primary scoring axis, or no numeric mapping.
+
+    Version-1 artifacts can request the legacy mapper explicitly.  This avoids
+    silently reinterpreting stored historical audits while ensuring a new,
+    unregistered rule remains reportable but unscored.
+    """
+    if _methodology_version(row) == 1:
+        return legacy_axis_mapping(row)
+    metadata = rule_metadata(row)
+    # Compatibility extension point for a caller that registers a stable key
+    # before this module gains a typed entry.  Reject multi-axis values.
     explicit = RULE_AXIS_MAP.get(str(row.get("ruleId") or "")) or RULE_AXIS_MAP.get(rule_key(row))
-    if explicit:
-        return dict(explicit)
-    # Phase 2B hashed IDs identify catalogued workbook rows. Arbitrary custom
-    # IDs require an explicit registry entry and are surfaced as unmapped.
-    if str(row.get("ruleId") or "").startswith("rule_"):
-        return dict(SHEET_AXIS_MAP.get(str(row.get("sheet") or ""), {}))
-    return {}
+    if not metadata and explicit and len(explicit) == 1:
+        axis, weight = next(iter(explicit.items()))
+        return {axis: float(weight)} if axis in AXIS_IDS else {}
+    if not metadata or not metadata.primary_axis or not metadata.score_eligible:
+        return {}
+    mode = str(row.get("auditMode") or row.get("mode") or "website").lower()
+    if mode not in metadata.applicable_modes:
+        return {}
+    measurement_class = str(row.get("measurementClass") or "").lower()
+    if measurement_class in {"ai_visual", "ai_interpretation", "human_review_only"}:
+        return {}
+    return {metadata.primary_axis: 1.0}
 
 
 def _state(row: dict[str, Any]) -> tuple[str, str, str]:
@@ -74,7 +120,7 @@ def _state(row: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def score_axis(rows: Iterable[dict[str, Any]]) -> ScoreResult:
-    ordered = sorted((dict(row) for row in rows), key=lambda row: (str(row.get("ruleId") or rule_key(row)), str(row.get("findingId") or "")))
+    ordered = _deduplicated_score_rows(rows)
     applicable_weight = measured_weight = points = confidence_weight = 0.0
     applicable_count = measured_count = unknown = not_measured = collection_failed = warnings = 0
     for row in ordered:
@@ -109,12 +155,35 @@ def score_axis(rows: Iterable[dict[str, Any]]) -> ScoreResult:
     return ScoreResult(points / measured_weight * 100.0, True, None, measured_weight, applicable_weight, confidence, coverage, measured_count, applicable_count, unknown, not_measured, collection_failed, warnings)
 
 
+def _deduplicated_score_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep evidence instances but score one worst-case row per logical defect.
+
+    A registry dedupe family (notably performance) turns several metric records
+    into one score consequence for the same page/target.  The original records
+    remain available to reports as evidence.
+    """
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for index, raw in enumerate(rows):
+        row = dict(raw)
+        metadata = rule_metadata(row)
+        family = str(row.get("scoreConsequenceId") or (metadata.dedupe_family if metadata else ""))
+        target = str(row.get("target") or row.get("page_id") or row.get("pageId") or "")
+        # Ordinary independent rule rows retain individual consequences. Only
+        # explicit logical-family metadata is allowed to collapse scoring.
+        grouped[f"{family}|{target}" if family else f"row|{index}"].append(row)
+    rank = {"fail": 0, "warning": 1, "unknown": 2, "pass": 3}
+    selected = []
+    for key in sorted(grouped):
+        selected.append(sorted(grouped[key], key=lambda row: (rank.get(_state(row)[0], 4), str(row.get("findingId") or "")))[0])
+    return selected
+
+
 def _fingerprint(finding: dict[str, Any]) -> str:
     target = finding.get("target") or finding.get("element") or finding.get("evidenceFingerprint") or ""
     provenance = finding.get("provenance") or {}
     pages = provenance.get("pageRefs", []) if isinstance(provenance, dict) else []
     page_ids = ",".join(sorted(str(p.get("pageId") or "") for p in pages if isinstance(p, dict)))
-    rule = finding.get("ruleId") or finding.get("ruleKey") or finding.get("criterion") or ""
+    rule = finding.get("logicalDefectId") or finding.get("deduplicationKey") or finding.get("ruleId") or finding.get("ruleKey") or finding.get("criterion") or ""
     raw = "|".join(str(value).strip().lower() for value in (rule, page_ids, target))
     return sha256(raw.encode()).hexdigest()[:20]
 

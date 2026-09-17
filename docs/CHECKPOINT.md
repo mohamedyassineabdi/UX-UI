@@ -11,7 +11,7 @@
 
 The application uses a React/Vite frontend built into `src/ui/static/app/` and served by the Python HTTP server. A single local SQLite-backed worker system executes website, screenshot, Figma, and Android/mobile jobs. Website workspaces now include evidence manifests plus Axe and Lighthouse paths.
 
-Committed result semantics retain outcome, applicability, measurement state, stable IDs, and provenance. Measurement coverage is separate from page collection coverage. Evidence-aware five-axis scoring uses applicable measured pass/fail rules; Lighthouse results are laboratory data and visual-model output is probabilistic. SQLite schema version 3 stores jobs/events, append-only review revisions/events, and publication snapshots.
+Committed result semantics retain outcome, applicability, measurement state, stable IDs, and provenance. Measurement coverage is separate from page collection coverage. Methodology v2 scoring assigns a score-eligible logical rule to one primary axis; secondary tags and supplemental evidence do not add penalties, and legacy sheet mappings are not a v2 fallback. Lighthouse results are laboratory data with a report-only aggregate category, and visual-model output is probabilistic and independently unscored. SQLite schema version 3 stores jobs/events, append-only review revisions/events, and publication snapshots.
 
 The review lifecycle is machine audit -> revision -> validation -> approval -> immutable publication snapshot. Editing, validation, approval, and publication are distinct; arbitrary edited HTML is not accepted for publication. Render disables screenshot/live-mobile execution but not Figma.
 

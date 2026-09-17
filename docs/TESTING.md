@@ -27,7 +27,7 @@ CI runs those build/test/compile checks on Python 3.12, verifies no framework CD
 | Jobs/store/migrations | `test_job_queue.py` |
 | Auth, API/server, upload, network | `test_auth.py`, `test_auth_integration.py`, `test_server_security.py`, `test_upload_security.py`, `test_network_policy.py` |
 | Frontend/publication security | `test_frontend_security.py`, `test_publication_security.py` |
-| Result semantics/scoring/measurement | `test_phase2b_semantics.py`, `test_phase3a_scoring.py`, `test_phase3b_measurement.py` |
+| Result semantics/scoring/measurement | `test_phase2b_semantics.py`, `test_phase3a_scoring.py`, `test_methodology_v2_scoring.py`, `test_phase3b_measurement.py` |
 | Tool-backed checks | `test_axe_runner.py`, `test_lighthouse_runner.py` |
 | Review UI/workflow | `test_review_workflow.py`, `test_review_ui_contract.py` |
 | Dependency consistency | `test_dependency_consistency.py` |
