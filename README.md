@@ -22,7 +22,7 @@ UX/UI Auditor creates evidence-backed UX/UI audit reports from public websites, 
 
 An authenticated request creates a durable job. A local worker runs the selected pipeline, records evidence, applies measurements/checks, derives the five-axis scorecard, and writes a machine audit. Where review is used, the lifecycle is machine audit -> review revision -> validation -> approval -> immutable publication snapshot.
 
-The five axes are Performance & Task Execution, Flow & Architecture, Trust & Accessibility, Visual & UI Consistency, and Content & Microcopy. Scores use applicable, measured pass/fail evidence; warnings are cautions, and incomplete measurement reduces coverage/confidence rather than creating synthetic credit.
+The five axes are Task Effectiveness & Interaction, Information Architecture & Navigation, Accessibility, Visual Hierarchy & Interface Consistency, and Content Clarity & Guidance. Scores use applicable, measured pass/fail evidence; warnings are cautions, and incomplete measurement reduces coverage/confidence rather than creating synthetic credit.
 
 ## Requirements and installation
 

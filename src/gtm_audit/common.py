@@ -406,6 +406,99 @@ AXIS_USER_IMPACT["ui_consistency"] = (
 )
 AXIS_USER_IMPACT = {axis_id: value for axis_id, value in AXIS_USER_IMPACT.items() if axis_id in _ACTIVE_AXIS_IDS}
 
+# These definitions are the active fallback when the editable JSON is absent or
+# invalid.  Keep IDs stable because persisted findings and score maps use them.
+_V2_AXIS_METADATA = {
+    "task_execution": {
+        "name": "Task Effectiveness & Interaction", "short_name": "Task & Interaction",
+        "description": "Evaluates whether users can initiate, progress through, and complete intended tasks efficiently through understandable controls, predictable interaction, timely feedback, resilient forms, recoverable errors, and acceptable runtime responsiveness.",
+        "focus": ["Interaction", "Forms", "Feedback"],
+        "core_question": "Can users start, progress through, and complete their intended task efficiently and confidently, with clear controls, timely feedback, and recoverable errors?",
+        "look_for": ["Clear task initiation and understandable controls.", "Timely feedback, recoverable errors, and clear completion.", "Runtime responsiveness that does not materially interrupt task progress."],
+        "healthy_signals": ["Relevant next actions are discoverable.", "Controls communicate purpose, state, and result.", "Forms and recovery preserve useful progress."],
+        "failure_modes": ["Actions or state feedback are unclear.", "Forms impose avoidable effort or lose entered information.", "Loading, delay, or instability interrupts progress."],
+        "out_of_scope": ["Site-wide information architecture.", "Pure wording, styling, or accessibility-specific barriers.", "Marketing conversion optimization or unsupported satisfaction claims."],
+        "severity_ladder": {"high": "The issue prevents or seriously threatens completion of an important task, causes unrecoverable loss, or blocks an essential control.", "medium": "The issue materially increases task effort, uncertainty, error likelihood, or recovery cost, but a reasonable workaround remains.", "low": "The issue creates localized friction without substantially threatening successful completion."},
+        "evidence_expectations": ["Identify the affected task, control, form, or state.", "Distinguish runtime evidence from visual inference.", "Identify laboratory, browser-runtime, or field performance evidence; Lighthouse laboratory measurements are not field Core Web Vitals."],
+        "default_fix": "Make the relevant action and state clear, simplify avoidable task friction, preserve recoverable progress, and make completion or recovery explicit.",
+    },
+    "flow_architecture": {
+        "name": "Information Architecture & Navigation", "short_name": "IA & Navigation",
+        "description": "Evaluates whether information, destinations, and functional areas are organized and exposed in a way that supports findability, orientation, and confident navigation through the product.",
+        "focus": ["Navigation"],
+        "core_question": "Can users understand how information and destinations are organized, know where they are, and confidently choose where to go next?",
+        "look_for": ["Coherent navigation categories and destinations.", "Descriptive labels with information scent.", "Meaningful grouping, orientation, and understandable hierarchy."],
+        "healthy_signals": ["Navigation labels are descriptive and distinguishable.", "Related content and functionality are grouped coherently.", "Current location and destination meaning are clear where relevant."],
+        "failure_modes": ["Labels are vague, generic, or organization-centric.", "Important destinations are hidden or fragmented.", "Orientation, hierarchy, or destination confirmation is unclear."],
+        "out_of_scope": ["Step-by-step task execution or form completion.", "Pure visual styling or accessibility of controls.", "Buyer journey, conversion sequencing, or unsupported mental-model claims."],
+        "severity_ladder": {"high": "An important destination is effectively unreachable, systematically misleading, or structurally hidden.", "medium": "Structure, categorization, orientation, or information scent creates material search effort or uncertainty.", "low": "A localized navigation inconsistency causes minor extra search or orientation effort."},
+        "evidence_expectations": ["Identify the navigation element, destination, group, hierarchy, or orientation cue.", "Prefer cross-page or screen evidence for inconsistency.", "Do not claim full findability from a single screenshot."],
+        "default_fix": "Clarify destination structure and navigation labels, group related information coherently, expose important destinations in expected locations, and strengthen orientation cues.",
+    },
+    "trust_accessibility": {
+        "name": "Accessibility", "short_name": "Accessibility",
+        "description": "Evaluates observable barriers that may prevent people with disabilities from perceiving, understanding, navigating, or operating the interface, using WCAG 2.2 and applicable platform accessibility guidance as the primary reference.",
+        "focus": ["Labeling", "Forms", "Interaction", "Presentation"],
+        "core_question": "Can people with diverse abilities perceive, understand, navigate, and operate the audited interface without avoidable accessibility barriers?",
+        "look_for": ["Verified WCAG or axe violations where DOM or runtime evidence is available.", "Accessible names, semantics, keyboard and focus access.", "Applicable contrast, labels, instructions, target-size, status, motion, and modality barriers."],
+        "healthy_signals": ["Measured applicable criteria have no verified WCAG A/AA failure.", "Essential functionality is keyboard operable with usable focus.", "Controls expose meaningful names, semantics, labels, and instructions."],
+        "failure_modes": ["Essential functionality is inaccessible by keyboard or alternative input.", "Names, labels, contrast, focus, targets, or semantics create a verified barrier.", "Important state is communicated only visually."],
+        "out_of_scope": ["Full WCAG conformance claims from automation alone.", "Trust, credibility, privacy, security, brand professionalism, or aesthetic quality.", "Unsupported runtime claims from screenshots or Figma."],
+        "severity_ladder": {"high": "A verified barrier prevents or seriously obstructs access to essential content, navigation, or functionality.", "medium": "A verified barrier creates material difficulty for a meaningful group of users.", "low": "A localized accessibility problem has limited scope while still violating an applicable expectation."},
+        "evidence_expectations": ["Cite applicable WCAG 2.2 criteria where relevant.", "Identify the affected element or state and measured values for contrast or target size.", "Prefer standards-backed evidence and distinguish automation from human review."],
+        "default_fix": "Correct the cited accessibility barrier using applicable standard or platform guidance, then retest the affected element or task.",
+    },
+    "ui_consistency": {
+        "name": "Visual Hierarchy & Interface Consistency", "short_name": "Hierarchy & Consistency",
+        "description": "Evaluates whether visual emphasis, layout, typography, spacing, and recurring interface components form a coherent system that makes priority, relationships, and expected patterns easy to recognize.",
+        "focus": ["Presentation", "Visual hierarchy"],
+        "core_question": "Does the interface guide attention to what matters and apply coherent, predictable visual and component patterns across comparable surfaces?",
+        "look_for": ["Visual emphasis, grouping, and hierarchy.", "Coherent component, typography, spacing, color, layout, and state patterns.", "Responsive preservation of hierarchy and relationships."],
+        "healthy_signals": ["Important levels of emphasis and related information are distinguishable.", "Equivalent components and states look predictably related.", "Comparable screens share coherent patterns."],
+        "failure_modes": ["Multiple elements compete equally for attention.", "Repeated components or visual states vary unnecessarily.", "Typography, spacing, color, grouping, or responsive hierarchy is inconsistent."],
+        "out_of_scope": ["Information taxonomy, destination structure, actual behavior, or wording quality.", "WCAG contrast violations, subjective aesthetic preference, or brand strategy."],
+        "severity_ladder": {"high": "Hierarchy or inconsistency materially obscures an essential action, state, or relationship.", "medium": "Inconsistent hierarchy or components materially increase interpretation effort or uncertainty.", "low": "Localized visual inconsistency has limited impact."},
+        "evidence_expectations": ["Compare visible examples where possible.", "Identify the component family, hierarchy relationship, or visual property.", "Distinguish deterministic inconsistency from subjective aesthetic judgment."],
+        "default_fix": "Normalize hierarchy, repeated components, typography, spacing, alignment, and state treatments so equivalent information and actions are visually predictable.",
+    },
+    "content_microcopy": {
+        "name": "Content Clarity & Guidance", "short_name": "Content & Guidance",
+        "description": "Evaluates whether visible language helps users understand information, choices, actions, requirements, consequences, and recovery without unnecessary interpretation or jargon.",
+        "focus": ["Content", "Labeling"],
+        "core_question": "Can users understand what the interface is telling them, what available actions mean, and what they need to do next?",
+        "look_for": ["Descriptive headings, actions, links, labels, instructions, helper text, and recovery wording.", "Consistent terminology, plain language, scanability, status, confirmation, and consequence clarity."],
+        "healthy_signals": ["Headings and actions use specific understandable wording.", "Labels and terminology are concise and consistent.", "Errors and status text explain outcomes and recovery."],
+        "failure_modes": ["Headings, actions, links, or labels are vague or ambiguous.", "Jargon or inconsistent terminology impedes understanding.", "Requirements, consequences, recovery, or key information are unclear."],
+        "out_of_scope": ["Structural taxonomy, actual control behavior, styling, programmatic label accessibility, marketing persuasion, or unsupported audience-comprehension claims."],
+        "severity_ladder": {"high": "Unclear language is likely to prevent an essential action, hide a material consequence, or prevent recovery.", "medium": "Wording materially increases interpretation effort, uncertainty, or error likelihood.", "low": "Localized wording or scannability creates minor friction."},
+        "evidence_expectations": ["Quote the visible wording and identify the affected element.", "Explain observable ambiguity without assuming emotional reaction.", "Distinguish deterministic wording patterns from AI interpretation."],
+        "default_fix": "Rewrite the affected wording using concise, consistent user-facing language that clearly communicates meaning, action, requirements, consequences, and recovery.",
+    },
+}
+for _axis in AXIS_DEFINITIONS:
+    _axis.update(copy.deepcopy(_V2_AXIS_METADATA[_axis["id"]]))
+AXIS_KEYWORDS.update({
+    "task_execution": ["task", "interaction", "control", "form", "feedback", "system status", "error prevention", "error recovery", "completion", "confirmation", "responsiveness", "performance", "user control"],
+    "flow_architecture": ["information architecture", "navigation", "taxonomy", "findability", "information scent", "wayfinding", "orientation", "grouping", "destination", "hierarchy", "structure"],
+    "trust_accessibility": ["accessibility", "WCAG", "perceivable", "operable", "understandable", "robust", "keyboard", "focus", "contrast", "accessible name", "semantics", "target size", "forms", "assistive technology"],
+    "ui_consistency": ["visual hierarchy", "interface consistency", "component", "typography", "spacing", "alignment", "layout", "color", "state", "responsive", "grouping"],
+    "content_microcopy": ["content", "heading", "label", "link", "action wording", "instruction", "helper text", "error message", "terminology", "plain language", "scannability", "confirmation", "status"],
+})
+AXIS_IMPACT.update({
+    "task_execution": "Task friction can increase abandonment, support demand, user errors, failed transactions or processes, and operational cost.",
+    "flow_architecture": "Poor architecture and navigation can reduce discoverability of important functionality or information, increase abandonment and support demand, and make products harder to learn.",
+    "trust_accessibility": "Accessibility barriers can exclude users, create compliance and legal risk, increase support burden, and prevent access to important services or functionality.",
+    "ui_consistency": "Inconsistent interface patterns can increase learning cost, design and maintenance overhead, user errors, and perceived product immaturity.",
+    "content_microcopy": "Unclear language can increase errors, abandonment, support demand, misinterpretation, and failed task completion.",
+})
+AXIS_USER_IMPACT.update({
+    "task_execution": "Users may spend more effort, make more mistakes, lose progress, or fail to complete the intended task.",
+    "flow_architecture": "Users may search repeatedly, choose incorrect destinations, lose orientation, or fail to find needed information or functionality.",
+    "trust_accessibility": "People with disabilities may be unable to perceive content, understand controls, navigate the interface, or complete essential tasks.",
+    "ui_consistency": "Users may struggle to identify priority, interpret relationships, or transfer learned interaction patterns between similar screens.",
+    "content_microcopy": "Users may misunderstand choices, requirements, consequences, or recovery steps and spend unnecessary effort interpreting the interface.",
+})
+
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 AUDIT_CRITERIA_CONFIG_PATH = Path(
@@ -516,7 +609,7 @@ def _criteria_payload_from_parts(
         item["user_impact"] = str(user_impacts.get(axis_id) or "").strip()
         payload_axes.append(item)
     return {
-        "version": 1,
+        "version": 2,
         "source": source,
         "configPath": str(AUDIT_CRITERIA_CONFIG_PATH),
         "axes": payload_axes,

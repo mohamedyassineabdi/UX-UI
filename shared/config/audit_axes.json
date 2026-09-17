@@ -1,96 +1,91 @@
 {
-  "version": 1,
+  "version": 2,
   "source": "custom",
   "configPath": "C:\\Users\\yassi\\OneDrive\\Bureau\\Projet_pfe\\UX-UI_-Agent\\shared\\config\\audit_axes.json",
   "axes": [
     {
       "id": "task_execution",
-      "name": "Performance and Task Execution",
-      "short_name": "Performance & Task",
-      "description": "How quickly and clearly the interface loads, responds, and helps a first-time visitor complete the primary task without friction.",
+      "name": "Task Effectiveness & Interaction",
+      "short_name": "Task & Interaction",
+      "description": "Evaluates whether users can initiate, progress through, and complete intended tasks efficiently through understandable controls, predictable interaction, timely feedback, resilient forms, recoverable errors, and acceptable runtime responsiveness.",
       "focus": [
         "Interaction",
         "Forms",
         "Feedback"
       ],
-      "core_question": "Can a target buyer identify the primary action and complete it with confidence from the visible UI?",
+      "core_question": "Can users start, progress through, and complete their intended task efficiently and confidently, with clear controls, timely feedback, and recoverable errors?",
       "look_for": [
-        "Core Web Vitals evidence when a live URL is available: LCP, INP, and CLS.",
-        "Lighthouse-style opportunities such as render blocking resources, heavy images, unused code, and slow server response.",
-        "A primary CTA or next step is visible, specific, and not buried by competing actions.",
-        "Forms, key controls, and step transitions explain what happens next and provide feedback."
+        "A clear initiation or next action exists where the task requires one.",
+        "Interactive controls behave predictably and communicate meaningful state changes.",
+        "Forms and input flows avoid unnecessary effort and clearly communicate requirements.",
+        "User actions receive timely and understandable system feedback.",
+        "Errors can be prevented where practical and recovered from without unnecessary loss of user input or progress.",
+        "Users can correct, reverse, retry, or leave actions where appropriate.",
+        "Successful task completion or submission is clearly confirmed.",
+        "Where runtime evidence exists, loading, responsiveness, and visual stability do not materially interrupt task progress."
       ],
       "healthy_signals": [
-        "The primary CTA uses clear action language tied to an obvious outcome.",
-        "Important forms or task flows expose labels, states, and helpful feedback.",
-        "The screen sequence supports completion instead of forcing detours or guesswork."
+        "The relevant next action is discoverable when needed.",
+        "Controls communicate their purpose, state, and result consistently.",
+        "User actions produce timely feedback.",
+        "Forms communicate requirements before or at the point of input.",
+        "Recoverable errors preserve useful user-entered data where possible.",
+        "Error feedback explains how to recover.",
+        "Users can correct or reverse actions where appropriate.",
+        "Completion states clearly explain what happened and what happens next.",
+        "Available runtime evidence shows no major performance friction that materially disrupts the task."
       ],
       "failure_modes": [
-        "The user must infer the next step because the CTA is vague, hidden, or visually weak.",
-        "Controls appear disconnected from their consequences, or the form asks for input without enough context.",
-        "Error, loading, or confirmation states are missing or not signposted in the visible interface.",
-        "Competing actions, repeated CTAs, or destructive controls increase the chance of abandonment or mistakes."
+        "The relevant primary or next action is difficult to identify.",
+        "Controls behave unpredictably or provide unclear state feedback.",
+        "The user cannot determine whether an action succeeded.",
+        "Forms impose avoidable effort or lose entered information.",
+        "Error states describe failure without enabling recovery.",
+        "Users become trapped or cannot correct an important mistake.",
+        "Task completion is ambiguous.",
+        "Loading, interaction delay, or layout instability materially interrupts progress."
       ],
       "out_of_scope": [
-        "Do not penalize missing backend behavior unless the screenshots visibly show an unclear, broken, or unsafe state.",
-        "Do not assume a long task is bad if the screen shows justified guidance or staged progression."
+        "Site-wide information taxonomy or destination organization.",
+        "General navigation architecture.",
+        "Pure wording quality unless wording directly causes interaction ambiguity.",
+        "Pure visual hierarchy or styling.",
+        "Accessibility-specific barriers.",
+        "Marketing conversion optimization.",
+        "Whether the product solves the correct strategic problem.",
+        "User satisfaction or emotional response inferred without user evidence."
       ],
       "severity_ladder": {
-        "high": "The main commercial action is hard to spot, hard to trust, or visibly risky to complete.",
-        "medium": "The flow is usable, but visible ambiguity or weak feedback would slow or discourage completion.",
-        "low": "The task is understandable, with only secondary friction or polish issues."
+        "high": "The issue prevents or seriously threatens completion of an important task, causes unrecoverable loss, blocks an essential control, or creates substantial repeated failure with no reasonable workaround.",
+        "medium": "The issue materially increases task effort, uncertainty, error likelihood, or recovery cost, but a reasonable workaround remains.",
+        "low": "The issue creates localized friction or unnecessary effort without substantially threatening successful completion."
       },
       "evidence_expectations": [
-        "Quote the visible CTA label, form label, state message, or step name when possible.",
-        "Use measured performance data when available; otherwise mark performance comments as visual or heuristic."
+        "Identify the affected task, control, form, or state.",
+        "Show the observable interaction or runtime condition.",
+        "Distinguish actual runtime evidence from visual inference.",
+        "Include before/after state where interaction behavior is relevant.",
+        "Performance claims identify whether evidence is laboratory, browser-runtime, or field data.",
+        "Do not call Lighthouse lab measurements field Core Web Vitals."
       ],
-      "default_fix": "Make the primary action explicit, reduce competing actions, and show clearer completion feedback on the visible flow.",
+      "default_fix": "Make the relevant action and state clear, simplify avoidable task friction, provide timely feedback, preserve recoverable progress, and make completion or recovery explicit.",
       "keywords": [
-        "call to action",
-        "cta",
-        "submit",
-        "continue",
-        "next step",
-        "primary action",
-        "form",
-        "input",
-        "error message",
-        "confirmation",
-        "loading",
-        "feedback",
-        "workflow",
-        "largest contentful paint",
-        "lcp",
-        "interaction to next paint",
-        "inp",
-        "cumulative layout shift",
-        "cls",
-        "core web vitals",
-        "lighthouse",
-        "page speed",
-        "render blocking",
-        "server response",
-        "unused javascript",
-        "image optimization"
+        "task", "interaction", "control", "form", "feedback", "system status", "error prevention", "error recovery", "completion", "confirmation", "responsiveness", "performance", "user control"
       ],
-      "business_impact": "Slow loading, weak responsiveness, or unclear task flow increases abandonment and weakens the product story.",
-      "user_impact": "the page feels slow, unresponsive, or harder to complete than it should"
+      "business_impact": "Task friction can increase abandonment, support demand, user errors, failed transactions or processes, and operational cost.",
+      "user_impact": "Users may spend more effort, make more mistakes, lose progress, or fail to complete the intended task."
     },
     {
       "id": "flow_architecture",
-      "name": "Flow Logic & Information Architecture",
-      "short_name": "Flow & Architecture",
-      "description": "How understandable the navigation model, page structure, and wayfinding feel across the visible journey.",
+      "name": "Information Architecture & Navigation",
+      "short_name": "IA & Navigation",
+      "description": "Evaluates whether information, destinations, and functional areas are organized and exposed in a way that supports findability, orientation, and confident navigation through the product.",
       "focus": [
-        "Navigation",
-        "Presentation"
+        "Navigation"
       ],
-      "core_question": "Can a user tell where they are, what each area is for, and how to move to the next relevant place?",
+      "core_question": "Can users understand how information and destinations are organized, know where they are, and confidently choose where to go next?",
       "look_for": [
-        "Navigation labels and repeated structures create clear information scent.",
-        "Page sections, headings, and content order match the user's likely questions.",
-        "Users can tell where they are and what belongs together without scanning the whole page repeatedly.",
-        "Cross-page navigation looks consistent enough to support orientation and return visits."
+        "Navigation categories and destinations are organized coherently.", "Navigation labels provide enough information scent to predict their destinations.", "Related information and functionality are grouped meaningfully.", "Important destinations are discoverable from expected locations.", "Users can determine their current location, scope, or context where orientation is needed.", "Comparable pages or screens use consistent navigation mechanisms.", "Parent-child and section relationships are understandable.", "Excessive hierarchy depth, fragmentation, duplication, or disconnected destinations do not create avoidable search effort.", "Destination content confirms what the selected navigation path suggested."
       ],
       "healthy_signals": [
         "Repeated navigation appears in a predictable order and uses familiar labels.",
@@ -116,41 +111,40 @@
         "Reference visible navigation labels, section titles, breadcrumb-like cues, or grouping patterns.",
         "Explain how the visible order either supports or interrupts the buyer's likely path."
       ],
-      "default_fix": "Clarify navigation labels, strengthen page grouping, and order content around the buyer's next likely question.",
+      "default_fix": "Clarify destination structure and navigation labels, group related information coherently, expose important destinations in expected locations, and strengthen orientation cues.",
       "keywords": [
         "navigation",
         "menu",
         "breadcrumb",
         "wayfinding",
         "information architecture",
-        "section order",
+        "taxonomy",
         "grouped",
         "orientation",
         "hierarchy",
         "findability",
-        "page structure",
-        "layout"
+        "destination", "hierarchy", "structure"
       ],
-      "business_impact": "Weak architecture slows comprehension and makes the offer feel less mature and less navigable.",
-      "user_impact": "people struggle to understand where they are, what comes next, or how the experience is organized"
+      "business_impact": "Poor architecture and navigation can reduce discoverability of important functionality or information, increase abandonment and support demand, and make products harder to learn.",
+      "user_impact": "Users may search repeatedly, choose incorrect destinations, lose orientation, or fail to find needed information or functionality."
     },
     {
       "id": "trust_accessibility",
-      "name": "Trust & Accessibility",
-      "short_name": "Trust & Accessibility",
-      "description": "How reliably the experience satisfies visible and runtime WCAG 2.2 accessibility expectations plus trust-critical usability signals.",
+      "name": "Accessibility",
+      "short_name": "Accessibility",
+      "description": "Evaluates observable barriers that may prevent people with disabilities from perceiving, understanding, navigating, or operating the interface, using WCAG 2.2 and applicable platform accessibility guidance as the primary reference.",
       "focus": [
-        "Content",
         "Labeling",
+        "Interaction",
         "Forms",
         "Presentation"
       ],
-      "core_question": "Can users perceive, operate, and understand the audited pages according to WCAG 2.2 expectations without avoidable barriers?",
+      "core_question": "Can people with diverse abilities perceive, understand, navigate, and operate the audited interface without avoidable accessibility barriers?",
       "look_for": [
         "WCAG 2.2 contrast and non-text contrast risks detected from rendered foreground/background measurements.",
         "WCAG 2.2 keyboard, focus order, and focus-visible risks detected from runtime tab traversal when available.",
         "WCAG 2.2 name/role/value, link-purpose, target-size, label, and instruction risks detected from controls and forms.",
-        "Links and buttons that fail activation, produce no visible result, or are exposed while off-screen/hidden."
+        "Applicable target-size requirements, semantic structure, meaningful relationships, accessible status feedback, and observable motion or input-modality barriers."
       ],
       "healthy_signals": [
         "Text and controls meet WCAG contrast thresholds on the captured pages.",
@@ -168,15 +162,15 @@
         "Do not invent keyboard failures when the keyboard probe was not run; mark missing runtime coverage as a limitation."
       ],
       "severity_ladder": {
-        "high": "Visible issues would likely reduce trust, exclude some users, or make the product feel unsafe or careless.",
-        "medium": "The UI looks mostly usable, but meaningful visible barriers or reassurance gaps remain.",
-        "low": "Trust and accessibility cues are broadly present, with only secondary or localized weaknesses."
+        "high": "A verified barrier prevents or seriously obstructs access to essential content, navigation, or functionality, especially where no reasonable alternative is available.",
+        "medium": "A verified barrier creates material difficulty for a meaningful group of users but does not completely prevent the affected task or content.",
+        "low": "A localized accessibility problem has limited scope or impact while still violating an applicable requirement or accessibility expectation."
       },
       "evidence_expectations": [
         "Cite the WCAG 2.2 success criterion number, measured signal, affected page, and exact visible control or text sample.",
         "Prefer runtime evidence from Playwright, contrast calculations, accessible names, target sizes, and keyboard tab probes."
       ],
-      "default_fix": "Fix the cited WCAG 2.2 barrier, then retest the affected page with contrast checks, keyboard traversal, and control activation.",
+      "default_fix": "Correct the cited accessibility barrier using the applicable standard or platform guidance, then retest the affected element or task using relevant automated, keyboard, visual, or assistive-technology evidence.",
       "keywords": [
         "contrast",
         "focus",
@@ -185,33 +179,25 @@
         "label",
         "instructions",
         "required",
-        "privacy",
-        "security",
-        "trust",
-        "proof",
         "accessibility",
         "wcag",
-        "contact"
+        "perceivable", "operable", "understandable", "robust", "keyboard", "accessible name", "semantics", "assistive technology"
       ],
-      "business_impact": "Visible trust and WCAG 2.2 accessibility gaps increase perceived risk and narrow the reachable audience.",
-      "user_impact": "parts of the experience may not meet visible WCAG 2.2 expectations or feel reliable enough"
+      "business_impact": "Accessibility barriers can exclude users, create compliance and legal risk, increase support burden, and prevent access to important services or functionality.",
+      "user_impact": "People with disabilities may be unable to perceive content, understand controls, navigate the interface, or complete essential tasks."
     },
     {
       "id": "ui_consistency",
-      "name": "Visual Brand & UI Consistency",
-      "short_name": "Visual & UI Consistency",
-      "description": "How consistently components, hierarchy, visual brand treatments, and recurring interaction patterns are applied across the visible experience.",
+      "name": "Visual Hierarchy & Interface Consistency",
+      "short_name": "Hierarchy & Consistency",
+      "description": "Evaluates whether visual emphasis, layout, typography, spacing, and recurring interface components form a coherent system that makes priority, relationships, and expected patterns easy to recognize.",
       "focus": [
         "Presentation",
-        "Visual hierarchy",
-        "Interaction"
+        "Visual hierarchy"
       ],
-      "core_question": "Do repeated controls, layouts, and visual treatments behave and look consistent enough to feel mature and predictable?",
+      "core_question": "Does the interface guide attention to what matters and apply coherent, predictable visual and component patterns across comparable surfaces?",
       "look_for": [
-        "Repeated controls use stable labels, placement, shape, spacing, and emphasis.",
-        "The audit compares component families, such as buttons, cards, nav items, and form fields, and flags unexplained outliers.",
-        "Hierarchy directs attention to the most important content, proof, and actions.",
-        "Color, typography, imagery, and composition feel like one product system rather than disconnected screens."
+        "Visual emphasis reflects intended information and action priority.", "Heading and content levels are visually distinguishable.", "Related items are perceptually grouped.", "Equivalent components use coherent appearance and state treatment.", "Typography follows a recognizable hierarchy.", "Spacing and alignment use repeatable patterns.", "Color and visual states are applied consistently.", "Comparable pages or screens use coherent layouts and component families.", "Responsive variants preserve important hierarchy and relationships."
       ],
       "healthy_signals": [
         "Component families feel related through spacing, shape, hierarchy, and behavior cues.",
@@ -237,7 +223,7 @@
         "Compare at least two visible examples when claiming inconsistency.",
         "Name the component family or repeated pattern that changes across contexts."
       ],
-      "default_fix": "Normalize repeated controls, spacing, and emphasis so equivalent actions and components feel predictably related.",
+      "default_fix": "Normalize hierarchy, repeated components, typography, spacing, alignment, and state treatments so equivalent information and actions are visually predictable.",
       "keywords": [
         "consistent",
         "consistency",
@@ -251,34 +237,23 @@
         "layout consistency",
         "repeated",
         "visual hierarchy",
-        "brand",
-        "imagery",
-        "hero",
-        "focal point",
-        "distinctive",
-        "polish",
-        "color palette",
-        "composition"
+        "typography", "alignment", "color", "state", "responsive", "grouping"
       ],
-      "business_impact": "Inconsistent components, hierarchy, or brand treatments reduce perceived product maturity and make repeat use less efficient.",
-      "user_impact": "recurring patterns, hierarchy, or brand treatments do not look consistent, which makes the product feel less mature"
+      "business_impact": "Inconsistent interface patterns can increase learning cost, design and maintenance overhead, user errors, and perceived product immaturity.",
+      "user_impact": "Users may struggle to identify priority, interpret relationships, or transfer learned interaction patterns between similar screens."
     },
     {
       "id": "content_microcopy",
-      "name": "Content, Labels & Microcopy",
-      "short_name": "Content & Microcopy",
-      "description": "How clearly visible messaging, headings, labels, and CTA text explain value, meaning, and the next step.",
+      "name": "Content Clarity & Guidance",
+      "short_name": "Content & Guidance",
+      "description": "Evaluates whether visible language helps users understand information, choices, actions, requirements, consequences, and recovery without unnecessary interpretation or jargon.",
       "focus": [
         "Content",
-        "Labeling",
-        "Interaction"
+        "Labeling"
       ],
-      "core_question": "Do the visible words use the buyer's language and make the message and actions immediately understandable?",
+      "core_question": "Can users understand what the interface is telling them, what available actions mean, and what they need to do next?",
       "look_for": [
-        "Headlines and supporting copy explain what the product is, for whom, and why it matters.",
-        "Labels and CTA text tell users what they can do without relying on jargon or internal language.",
-        "Microcopy reduces hesitation by clarifying consequences, formats, and expectations.",
-        "The visible copy is concise enough to scan while still answering key user questions."
+        "Headings describe the content that follows.", "Buttons and action labels communicate the intended action.", "Link text provides meaningful destination or action context.", "Labels use understandable and consistent terminology.", "Instructions and helper text clarify meaningful requirements.", "Error messages explain what happened and how to recover.", "Important terminology, status, confirmation, and consequences are clear and consistent.", "Important information can be scanned efficiently."
       ],
       "healthy_signals": [
         "Headings answer user questions quickly and match the visible action path.",
@@ -304,23 +279,21 @@
         "Quote the actual heading, label, or CTA text that supports the finding.",
         "Explain what a first-time visitor would still not understand after reading the visible copy."
       ],
-      "default_fix": "Rewrite the visible message and labels in user language, clarify the value proposition, and make CTA outcomes explicit.",
+      "default_fix": "Rewrite the affected wording using concise, consistent user-facing language that clearly communicates meaning, action, requirements, consequences, and recovery.",
       "keywords": [
         "copy",
         "microcopy",
         "heading",
-        "headline",
+        "link",
         "label",
         "button text",
         "terminology",
         "jargon",
         "plain language",
-        "message",
-        "value proposition",
-        "cta label"
+        "action wording", "instruction", "helper text", "error message", "scannability", "confirmation", "status"
       ],
-      "business_impact": "Unclear messaging makes the value proposition, controls, and next steps harder to understand and repeat.",
-      "user_impact": "the value proposition and interaction cues are harder to understand than they should be"
+      "business_impact": "Unclear language can increase errors, abandonment, support demand, misinterpretation, and failed task completion.",
+      "user_impact": "Users may misunderstand available choices, requirements, consequences, or recovery steps and spend unnecessary effort interpreting the interface."
     }
   ]
 }

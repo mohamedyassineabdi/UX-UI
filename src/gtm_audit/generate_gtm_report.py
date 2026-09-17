@@ -17,11 +17,11 @@ from .evidence import build_gtm_spotlight
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 AXIS_LABELS = {
-    "task_execution": "Performance & Task Execution",
-    "flow_architecture": "Flow & Architecture",
-    "trust_accessibility": "Trust & Accessibility",
-    "ui_consistency": "Visual & UI Consistency",
-    "content_microcopy": "Content & Microcopy",
+    "task_execution": "Task Effectiveness & Interaction",
+    "flow_architecture": "Information Architecture & Navigation",
+    "trust_accessibility": "Accessibility",
+    "ui_consistency": "Visual Hierarchy & Interface Consistency",
+    "content_microcopy": "Content Clarity & Guidance",
 }
 
 
@@ -101,9 +101,10 @@ def display_copy(value: Any) -> str:
         "GTM ": "",
         " GTM": "",
         "GTM": "",
-        "Trust & WCAG 2.2 Accessibility": "Trust & Accessibility",
-        "Trust & WCAG 2.2": "Trust & Accessibility",
-        "Visual Brand & UI Consistency": "Visual & UI Consistency",
+        "Trust & WCAG 2.2 Accessibility": "Accessibility",
+        "Trust & WCAG 2.2": "Accessibility",
+        "Trust & Accessibility": "Accessibility",
+        "Visual Brand & UI Consistency": "Visual Hierarchy & Interface Consistency",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)

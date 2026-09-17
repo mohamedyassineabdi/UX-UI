@@ -13,7 +13,7 @@ UX/UI Auditor creates evidence-backed UX/UI audit reports from public websites, 
 
 The implemented path is React/Vite frontend -> Python HTTP server/API -> SQLite job store and local workers -> mode-specific pipelines -> evidence/measurement -> evidence-aware scoring -> machine report -> optional structured review -> immutable publication snapshot. It is one application instance, not a microservice or distributed system.
 
-Website audits use bounded representative sampling. Findings retain outcome, applicability, measurement state, stable identifiers, and provenance. Collection coverage differs from measurement coverage. The five axes are **Performance & Task Execution**, **Flow & Architecture**, **Trust & Accessibility**, **Visual & UI Consistency**, and **Content & Microcopy**. SQLite schema version 3 stores jobs/events, review revisions/events, and publication snapshots.
+Website audits use bounded representative sampling. Findings retain outcome, applicability, measurement state, stable identifiers, and provenance. Collection coverage differs from measurement coverage. The five axes are **Task Effectiveness & Interaction**, **Information Architecture & Navigation**, **Accessibility**, **Visual Hierarchy & Interface Consistency**, and **Content Clarity & Guidance**. Technical axis IDs remain stable for compatibility. SQLite schema version 3 stores jobs/events, review revisions/events, and publication snapshots.
 
 Bearer authentication and owner-scoped access protect audit, report, artifact, review, and publication records. URL/network safeguards and conservative interaction rules limit audit behavior. The Python server serves the React/Vite production build.
 
