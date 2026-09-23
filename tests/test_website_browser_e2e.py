@@ -37,6 +37,8 @@ class FixtureSite(BaseHTTPRequestHandler):
             "/": """<main><h1>Fixture home</h1><nav><a href='/about'>About</a><a href='/spa'>SPA</a></nav><button id='bad'></button><form><label>Email <input type='email'></label><button>Send</button></form></main>""",
             "/about": "<main><h1>About fixture</h1><p>Representative content.</p></main>",
             "/spa": "<main><h1>Loading</h1><script>setTimeout(()=>document.querySelector('h1').textContent='Rendered SPA content', 20)</script></main>",
+            "/alpha": "<main><h1>AUDIT_FIXTURE_ALPHA</h1><button id='alpha-unnamed'></button></main>",
+            "/bravo": "<main><h1>AUDIT_FIXTURE_BRAVO</h1><input id='bravo-unlabeled'></main>",
         }
         body = pages.get(self.path)
         if body is None:
@@ -112,3 +114,37 @@ def test_browser_collection_captures_multi_page_spa_and_axe_evidence(tmp_path, m
     coverage = json.loads(workspace.coverage_manifest.read_text(encoding="utf-8"))
     assert coverage["summary"]["coverageStatus"] == "incomplete"
     assert coverage["summary"]["completed"] == 3 and coverage["summary"]["failed"] == 1
+
+
+def test_concurrent_browser_audits_keep_workspace_and_evidence_isolated(tmp_path, monkeypatch, fixture_site):
+    """Two real Chromium collectors must not share workspace/browser artifacts."""
+    pytest.importorskip("playwright.async_api")
+    workspaces = {name: AuditWorkspace(name, tmp_path / "audits") for name in ("concurrent-alpha", "concurrent-bravo")}
+    for name, path, marker in (("concurrent-alpha", "/alpha", "AUDIT_FIXTURE_ALPHA"), ("concurrent-bravo", "/bravo", "AUDIT_FIXTURE_BRAVO")):
+        workspace = workspaces[name]
+        workspace.prepare(mode="website")
+        workspace.website_menu.write_text(json.dumps({"homepage": f"{fixture_site}{path}", "navigation": [{"name": marker, "url": f"{fixture_site}{path}"}]}), encoding="utf-8")
+
+    monkeypatch.setattr(website_main.AuditWorkspace, "for_repository", classmethod(lambda _cls, job_id: workspaces[job_id]))
+    monkeypatch.setattr(website_main, "validate_public_url", lambda url: ValidatedURL(url=url, hostname="fixture.test", port=80, addresses=("127.0.0.1",)))
+    monkeypatch.setattr(website_main, "install_playwright_network_guard", lambda *_args: asyncio.sleep(0))
+    monkeypatch.setattr(website_main, "chromium_host_resolver_rules", lambda _urls: "")
+    monkeypatch.setattr(website_main, "run_lighthouse", lambda **_kwargs: {"status": "unavailable", "measurement": "not_measured"})
+    original = website_main.workspace_config
+    def fast(workspace):
+        config = original(workspace)
+        config["navigation"].update({"timeoutMs": 2_000, "postLoadDelayMs": 0})
+        config["pageReadiness"].update({"networkIdleTimeoutMs": 0, "assetTimeoutMs": 0, "settleDelayMs": 0})
+        config["pageCapture"]["captureScrollScreenshots"] = False
+        config["presentationChecks"]["responsiveDesktopMobile"]["enabled"] = False
+        return config
+    monkeypatch.setattr(website_main, "workspace_config", fast)
+
+    async def collect_both():
+        await asyncio.gather(website_main.async_main("concurrent-alpha"), website_main.async_main("concurrent-bravo"))
+    asyncio.run(collect_both())
+    alpha = workspaces["concurrent-alpha"].audit_results.read_text(encoding="utf-8")
+    bravo = workspaces["concurrent-bravo"].audit_results.read_text(encoding="utf-8")
+    assert "AUDIT_FIXTURE_ALPHA" in alpha and "AUDIT_FIXTURE_BRAVO" not in alpha
+    assert "AUDIT_FIXTURE_BRAVO" in bravo and "AUDIT_FIXTURE_ALPHA" not in bravo
+    assert workspaces["concurrent-alpha"].page_screenshots != workspaces["concurrent-bravo"].page_screenshots
