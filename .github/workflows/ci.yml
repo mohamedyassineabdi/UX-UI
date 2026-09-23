@@ -13,7 +13,10 @@ permissions:
 jobs:
   python:
     name: Python tests and smoke checks
-    runs-on: ubuntu-latest
+    # Playwright 1.43's supported Linux browser dependency set targets Jammy.
+    # Keep this browser gate on that reproducible runner rather than tracking
+    # the moving ubuntu-latest image.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

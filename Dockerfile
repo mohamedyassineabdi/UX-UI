@@ -20,9 +20,12 @@ RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 
 COPY pyproject.toml uv.lock package.json package-lock.json ./
 
+# Vite/esbuild resolves its Linux executable from the lockfile's
+# platform-specific optional packages. Omitting them makes the production
+# build depend on a missing native binary.
 RUN python -m pip install --no-cache-dir uv==0.9.28 \
     && UV_PYTHON_DOWNLOADS=never uv sync --python /usr/bin/python3 --frozen --no-dev --no-install-project \
-    && npm ci --omit=optional --ignore-scripts \
+    && npm ci --ignore-scripts \
     && npm install -g vercel@58.0.0 \
     && node --version \
     && vercel --version
