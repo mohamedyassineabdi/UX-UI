@@ -7,6 +7,7 @@ production URL validation and Playwright network guarding are never relaxed.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import threading
 from pathlib import Path
@@ -197,3 +198,29 @@ def test_authenticated_worker_jobs_collect_isolated_sites(api_server, tmp_path, 
     assert "AUDIT_FIXTURE_ALPHA" in alpha_result and "AUDIT_FIXTURE_BRAVO" not in alpha_result
     assert "AUDIT_FIXTURE_BRAVO" in bravo_result and "AUDIT_FIXTURE_ALPHA" not in bravo_result
     assert request(api_server, "GET", f"/api/audits/{bravo_id}", token="token-a")[0] == 404
+
+    # Bridge the real completed website workspace into the production review
+    # and snapshot workflow; only the external publication transport is local.
+    monkeypatch.setattr(server, "_publish_job_report", lambda *_args: "https://example.test/published")
+    revisions = f"/api/audits/{alpha_id}/revisions"
+    change = {"findingChanges": {"fixture_finding": {"reviewNote": "Reviewed Alpha evidence"}}}
+    status, _, body = request(api_server, "POST", revisions, token="token-a", body=change)
+    assert status == 201
+    revision = json.loads(body)
+    assert revision["reviewerId"] == "user-a" and revision["reviewStatus"] == "in_review"
+    assert request(api_server, "POST", revisions, token="token-b", body=change)[0] == 404
+    assert request(api_server, "POST", f"/api/audits/{alpha_id}/publish", token="token-a", body={"revisionId": revision["revisionId"]})[0] == 409
+    assert request(api_server, "POST", f"/api/audits/{alpha_id}/validate", token="token-b", body={"revisionId": revision["revisionId"]})[0] == 404
+    assert request(api_server, "POST", f"/api/audits/{alpha_id}/validate", token="token-a", body={"revisionId": revision["revisionId"]})[0] == 200
+    assert request(api_server, "POST", f"/api/audits/{alpha_id}/approve", token="token-a", body={"revisionId": revision["revisionId"]})[0] == 200
+    status, _, body = request(api_server, "POST", f"/api/audits/{alpha_id}/publish", token="token-a", body={"revisionId": revision["revisionId"]})
+    assert status == 200
+    publication = json.loads(body)["publication"]
+    snapshot = publication["snapshot"]
+    snapshot_path = workspaces[alpha_id].root / snapshot["snapshotPath"]
+    original = snapshot_path.read_bytes()
+    assert hashlib.sha256(original).hexdigest() == snapshot["snapshotHash"]
+    # Later mutable review state cannot rewrite the already published snapshot.
+    status, _, body = request(api_server, "POST", revisions, token="token-a", body={"expectedRevisionId": revision["revisionId"], "findingChanges": {"fixture_finding": {"reviewNote": "Later mutable value"}}})
+    assert status == 201
+    assert snapshot_path.read_bytes() == original
