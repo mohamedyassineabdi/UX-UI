@@ -1,0 +1,105 @@
+"""Browser-backed website collection regression tests.
+
+The local fixture is reached only through monkeypatched dependencies in this test;
+production URL validation and Playwright network guarding are never relaxed.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import pytest
+
+from src.audit.workspace import AuditWorkspace
+from src.security.network_policy import UnsafeURLError, ValidatedURL, validate_public_url
+import src.main as website_main
+
+
+class FixtureSite(BaseHTTPRequestHandler):
+    def log_message(self, *_args):
+        return
+
+    def do_GET(self):
+        if self.path == "/redirect":
+            self.send_response(302)
+            self.send_header("Location", "/about")
+            self.end_headers()
+            return
+        pages = {
+            "/": """<main><h1>Fixture home</h1><nav><a href='/about'>About</a><a href='/spa'>SPA</a></nav><button id='bad'></button><form><label>Email <input type='email'></label><button>Send</button></form></main>""",
+            "/about": "<main><h1>About fixture</h1><p>Representative content.</p></main>",
+            "/spa": "<main><h1>Loading</h1><script>setTimeout(()=>document.querySelector('h1').textContent='Rendered SPA content', 20)</script></main>",
+        }
+        body = pages.get(self.path)
+        if body is None:
+            self.send_error(404)
+            return
+        encoded = ("<!doctype html><html><body>" + body + "</body></html>").encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+
+@pytest.fixture
+def fixture_site():
+    instance = ThreadingHTTPServer(("127.0.0.1", 0), FixtureSite)
+    thread = threading.Thread(target=instance.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{instance.server_port}"
+    finally:
+        instance.shutdown()
+        instance.server_close()
+        thread.join(timeout=3)
+
+
+def test_production_ssrf_policy_still_rejects_localhost():
+    with pytest.raises(UnsafeURLError):
+        validate_public_url("http://127.0.0.1/")
+
+
+def test_browser_collection_captures_multi_page_spa_and_axe_evidence(tmp_path, monkeypatch, fixture_site):
+    pytest.importorskip("playwright.async_api")
+    workspace = AuditWorkspace("browser-e2e", tmp_path / "audits")
+    workspace.prepare(mode="website")
+    pages = [
+        {"name": "Home", "url": f"{fixture_site}/"},
+        {"name": "About", "url": f"{fixture_site}/about"},
+        {"name": "SPA", "url": f"{fixture_site}/spa"},
+    ]
+    workspace.website_menu.write_text(json.dumps({"homepage": f"{fixture_site}/", "navigation": pages}), encoding="utf-8")
+
+    checked = lambda url: ValidatedURL(url=url, hostname="fixture.test", port=80, addresses=("127.0.0.1",))
+    monkeypatch.setattr(website_main.AuditWorkspace, "for_repository", classmethod(lambda _cls, _job_id: workspace))
+    monkeypatch.setattr(website_main, "validate_public_url", checked)
+    monkeypatch.setattr(website_main, "install_playwright_network_guard", lambda *_args: asyncio.sleep(0))
+    monkeypatch.setattr(website_main, "chromium_host_resolver_rules", lambda _urls: "")
+    monkeypatch.setattr(website_main, "run_lighthouse", lambda **_kwargs: {"status": "unavailable", "measurement": "not_measured"})
+    original_workspace_config = website_main.workspace_config
+
+    def fast_fixture_config(active_workspace):
+        config = original_workspace_config(active_workspace)
+        config["navigation"].update({"timeoutMs": 2_000, "postLoadDelayMs": 0})
+        config["pageReadiness"].update({"networkIdleTimeoutMs": 0, "assetTimeoutMs": 0, "settleDelayMs": 0})
+        config["pageCapture"].update({"captureScrollScreenshots": False})
+        config["presentationChecks"]["responsiveDesktopMobile"]["enabled"] = False
+        return config
+
+    monkeypatch.setattr(website_main, "workspace_config", fast_fixture_config)
+
+    asyncio.run(website_main.async_main("browser-e2e"))
+
+    results = json.loads(workspace.audit_results.read_text(encoding="utf-8"))
+    assert results["summary"]["pagesSucceeded"] == 3
+    assert all(page["screenshotPath"] for page in results["pages"])
+    assert "Rendered SPA content" in json.dumps(results)
+    home = next(page for page in results["pages"] if page["name"] == "Home")
+    assert home["axe"]["status"] == "completed"
+    assert any(item["id"] == "button-name" for item in home["axe"]["raw"]["violations"])
+    assert all(page["lighthouse"]["measurement"] == "not_measured" for page in results["pages"])
+    assert workspace.coverage_manifest.exists()

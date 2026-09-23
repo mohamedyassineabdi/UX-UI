@@ -1,7 +1,7 @@
 {
   "version": 2,
   "source": "custom",
-  "configPath": "C:\\Users\\yassi\\OneDrive\\Bureau\\Projet_pfe\\UX-UI_-Agent\\shared\\config\\audit_axes.json",
+  "configPath": "shared/config/audit_axes.json",
   "axes": [
     {
       "id": "task_execution",
@@ -51,7 +51,7 @@
         "Pure wording quality unless wording directly causes interaction ambiguity.",
         "Pure visual hierarchy or styling.",
         "Accessibility-specific barriers.",
-        "Marketing conversion optimization.",
+        "Business outcome optimization unrelated to usability.",
         "Whether the product solves the correct strategic problem.",
         "User satisfaction or emotional response inferred without user evidence."
       ],
@@ -90,11 +90,11 @@
       "healthy_signals": [
         "Repeated navigation appears in a predictable order and uses familiar labels.",
         "Sectioning, grouping, and layout help users scan from overview to detail.",
-        "The page sequence supports evaluation, trust-building, and conversion without dead ends."
+        "The page sequence supports users' information needs and intended outcomes without dead ends."
       ],
       "failure_modes": [
         "Navigation is visually present but does not explain where important information lives.",
-        "Section order follows the company's internal logic instead of the buyer's decision flow.",
+        "Section order follows the organization's internal logic instead of users' task or information journey.",
         "Different areas of the journey feel disconnected, making users re-orient on every page.",
         "The interface hides key destinations behind generic labels, weak hierarchy, or fragmented page structure."
       ],
@@ -109,7 +109,7 @@
       },
       "evidence_expectations": [
         "Reference visible navigation labels, section titles, breadcrumb-like cues, or grouping patterns.",
-        "Explain how the visible order either supports or interrupts the buyer's likely path."
+        "Explain how the visible order either supports or interrupts users' likely path."
       ],
       "default_fix": "Clarify destination structure and navigation labels, group related information coherently, expose important destinations in expected locations, and strengthen orientation cues.",
       "keywords": [
@@ -261,7 +261,7 @@
         "Required instructions, helper text, and reassurance appear where the user needs them."
       ],
       "failure_modes": [
-        "Headlines are generic, clever, or internally focused rather than buyer-facing.",
+        "Headlines are generic, clever, or internally focused rather than focused on users' needs.",
         "Buttons, labels, or helper text force users to guess what a control means or what comes next.",
         "Copy is dense, repetitive, or vague enough to weaken scanning and comprehension.",
         "Jargon appears without explanation, or the page talks about the company without clarifying user value."

@@ -28,6 +28,10 @@ jobs:
         run: |
           npm run build
           ! rg -n "unpkg\\.com/(react|react-dom|gsap)" src/ui/static/app
+      - name: Install Chromium for website browser E2E
+        run: uv run python -m playwright install --with-deps chromium
+      - name: Run website browser E2E
+        run: uv run pytest -q tests/test_website_browser_e2e.py
       - name: Run tests
         run: uv run pytest -q
       - name: Compile project modules

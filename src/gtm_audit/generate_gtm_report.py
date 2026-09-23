@@ -1372,6 +1372,20 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     )
     coverage = payload.get("coverage") or {}
     coverage_summary = coverage.get("summary") or {}
+    axes_scored = int(summary.get("axesScored") or 0)
+    axes_total = int(summary.get("axesTotal") or 0)
+    measurement_coverage = max(0.0, min(1.0, float(summary.get("overallCoverage") or 0)))
+    measurement_complete = bool(axes_total) and axes_scored == axes_total and measurement_coverage >= 1.0
+    measurement_status = "complete" if measurement_complete else "incomplete"
+    measurement_banner = (
+        f'<section style="margin:20px 0;padding:16px;border:2px solid '
+        f'{"#11886e" if measurement_complete else "#cf513f"};border-radius:10px">'
+        f'<strong>Measurement coverage ({measurement_status})</strong><br>'
+        f'Axes scored: {axes_scored} of {axes_total} · '
+        f'Applicable-rule measurement coverage: {measurement_coverage * 100:.0f}%<br>'
+        f'{"All methodology axes have measured applicable evidence." if measurement_complete else "Scores reflect only measured applicable evidence; unscored or unavailable areas are not treated as passes."}'
+        f'</section>'
+    )
     coverage_banner = ""
     if coverage_summary:
         status = clean_text(coverage_summary.get("coverageStatus")) or "unknown"
@@ -2968,6 +2982,7 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
 <body>
   {integrity_banner}
   {coverage_banner}
+  {measurement_banner}
   <div class="shell">
     <header class="topbar">
       <div class="brand-lockups">

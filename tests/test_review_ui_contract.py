@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from src.gtm_audit.generate_gtm_report import render_html
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,3 +34,17 @@ def test_active_machine_report_surfaces_identify_integrity_metadata():
     assert "uploaded screenshots/surfaces analyzed" in gtm
     assert "screens/actions explored within configured exploration bounds" in gtm
     assert "Figma pages, frames, components, and rendered surfaces" in figma
+
+
+def test_machine_report_makes_partial_measurement_visible(tmp_path):
+    report = render_html(
+        {
+            "site": {"display_name": "Partial audit"},
+            "executiveSummary": {"axesScored": 1, "axesTotal": 5, "overallCoverage": 0.2},
+        },
+        tmp_path,
+    )
+    assert "Measurement coverage (incomplete)" in report
+    assert "Axes scored: 1 of 5" in report
+    assert "20%" in report
+    assert "not treated as passes" in report
