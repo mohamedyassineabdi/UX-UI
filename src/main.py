@@ -740,7 +740,14 @@ async def async_main(job_id: str):
                 worker,
                 config["execution"]["pageConcurrency"],
             )
-            by_url = {str(item.get("url") or "").rstrip("/"): item for item in page_results if isinstance(item, dict)}
+            # Page collection records retain the requested URL as `originalUrl`.
+            # Use it when reconciling representative-page coverage; otherwise
+            # completed/failed collection states never reach the manifest.
+            by_url = {
+                str(item.get("originalUrl") or item.get("url") or "").rstrip("/"): item
+                for item in page_results
+                if isinstance(item, dict)
+            }
             for page in coverage_pages:
                 result = by_url.get(page.canonical_url.rstrip("/"))
                 if not result or page.selection_status != "selected":

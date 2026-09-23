@@ -23,6 +23,11 @@ class FixtureSite(BaseHTTPRequestHandler):
         return
 
     def do_GET(self):
+        if self.path == "/broken":
+            # A deterministic transport failure: collection must preserve the
+            # other pages rather than converting this run to all-pass/all-fail.
+            self.connection.close()
+            return
         if self.path == "/redirect":
             self.send_response(302)
             self.send_header("Location", "/about")
@@ -71,6 +76,7 @@ def test_browser_collection_captures_multi_page_spa_and_axe_evidence(tmp_path, m
         {"name": "Home", "url": f"{fixture_site}/"},
         {"name": "About", "url": f"{fixture_site}/about"},
         {"name": "SPA", "url": f"{fixture_site}/spa"},
+        {"name": "Broken", "url": f"{fixture_site}/broken"},
     ]
     workspace.website_menu.write_text(json.dumps({"homepage": f"{fixture_site}/", "navigation": pages}), encoding="utf-8")
 
@@ -96,10 +102,13 @@ def test_browser_collection_captures_multi_page_spa_and_axe_evidence(tmp_path, m
 
     results = json.loads(workspace.audit_results.read_text(encoding="utf-8"))
     assert results["summary"]["pagesSucceeded"] == 3
-    assert all(page["screenshotPath"] for page in results["pages"])
+    assert results["summary"]["pagesFailed"] == 1
+    assert all(page["screenshotPath"] for page in results["pages"] if page["status"] == "success")
     assert "Rendered SPA content" in json.dumps(results)
     home = next(page for page in results["pages"] if page["name"] == "Home")
     assert home["axe"]["status"] == "completed"
     assert any(item["id"] == "button-name" for item in home["axe"]["raw"]["violations"])
-    assert all(page["lighthouse"]["measurement"] == "not_measured" for page in results["pages"])
-    assert workspace.coverage_manifest.exists()
+    assert all(page["lighthouse"]["measurement"] == "not_measured" for page in results["pages"] if page["status"] == "success")
+    coverage = json.loads(workspace.coverage_manifest.read_text(encoding="utf-8"))
+    assert coverage["summary"]["coverageStatus"] == "incomplete"
+    assert coverage["summary"]["completed"] == 3 and coverage["summary"]["failed"] == 1
