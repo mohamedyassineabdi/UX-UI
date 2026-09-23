@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -16,6 +17,9 @@ import pytest
 from src.audit.workspace import AuditWorkspace
 from src.security.network_policy import UnsafeURLError, ValidatedURL, validate_public_url
 import src.main as website_main
+from src.jobs import AuditWorker
+from src.ui import server
+from test_server_security import api_server, request
 
 
 class FixtureSite(BaseHTTPRequestHandler):
@@ -148,3 +152,48 @@ def test_concurrent_browser_audits_keep_workspace_and_evidence_isolated(tmp_path
     assert "AUDIT_FIXTURE_ALPHA" in alpha and "AUDIT_FIXTURE_BRAVO" not in alpha
     assert "AUDIT_FIXTURE_BRAVO" in bravo and "AUDIT_FIXTURE_ALPHA" not in bravo
     assert workspaces["concurrent-alpha"].page_screenshots != workspaces["concurrent-bravo"].page_screenshots
+
+
+def test_authenticated_worker_jobs_collect_isolated_sites(api_server, tmp_path, monkeypatch, fixture_site):
+    """Join API queueing, durable workers, real collection, and review publication."""
+    pytest.importorskip("playwright.async_api")
+    created = []
+    for suffix, token in (("alpha", "token-a"), ("bravo", "token-b")):
+        status, _, body = request(api_server, "POST", "/api/audits", token=token, body={"auditType": "website", "mode": "gtm", "url": f"{fixture_site}/{suffix}"})
+        assert status == 202
+        created.append(json.loads(body))
+    alpha_id, bravo_id = (item["id"] for item in created)
+    workspaces = {job_id: AuditWorkspace(job_id, server.AUDITS_DIR) for job_id in (alpha_id, bravo_id)}
+    for job_id, suffix, marker in ((alpha_id, "alpha", "AUDIT_FIXTURE_ALPHA"), (bravo_id, "bravo", "AUDIT_FIXTURE_BRAVO")):
+        workspace = workspaces[job_id]; workspace.prepare(mode="website")
+        workspace.website_menu.write_text(json.dumps({"homepage": f"{fixture_site}/{suffix}", "navigation": [{"name": marker, "url": f"{fixture_site}/{suffix}"}]}), encoding="utf-8")
+    monkeypatch.setattr(website_main.AuditWorkspace, "for_repository", classmethod(lambda _cls, job_id: workspaces[job_id]))
+    monkeypatch.setattr(website_main, "validate_public_url", lambda url: ValidatedURL(url=url, hostname="fixture.test", port=80, addresses=("127.0.0.1",)))
+    monkeypatch.setattr(website_main, "install_playwright_network_guard", lambda *_args: asyncio.sleep(0))
+    monkeypatch.setattr(website_main, "chromium_host_resolver_rules", lambda _urls: "")
+    monkeypatch.setattr(website_main, "run_lighthouse", lambda **_kwargs: {"status": "unavailable", "measurement": "not_measured"})
+    original = website_main.workspace_config
+    def fast(workspace):
+        config = original(workspace); config["navigation"].update({"timeoutMs": 2_000, "postLoadDelayMs": 0}); config["pageReadiness"].update({"networkIdleTimeoutMs": 0, "assetTimeoutMs": 0, "settleDelayMs": 0}); config["pageCapture"]["captureScrollScreenshots"] = False; config["presentationChecks"]["responsiveDesktopMobile"]["enabled"] = False
+        return config
+    monkeypatch.setattr(website_main, "workspace_config", fast)
+    overlap = threading.Barrier(2); done = threading.Event(); completed = []
+    def run_real_collection(job_id):
+        overlap.wait(timeout=10)
+        asyncio.run(website_main.async_main(job_id))
+        Path(workspaces[job_id].report / "index.html").write_text("<html>machine audit</html>", encoding="utf-8")
+        completed.append(job_id)
+        if len(completed) == 2: done.set()
+    monkeypatch.setattr(server, "_run_audit_job", run_real_collection)
+    worker = AuditWorker(server.JOB_STORE, server._execute_claimed_job, concurrency=2, poll_seconds=0.01)
+    monkeypatch.setattr(server, "JOB_WORKER", worker); worker.start(); worker.notify()
+    try:
+        assert done.wait(60)
+    finally:
+        worker.stop()
+    alpha, bravo = (server.JOB_STORE.get(job_id) for job_id in (alpha_id, bravo_id))
+    assert alpha["status"] == bravo["status"] == "completed"
+    alpha_result, bravo_result = (workspaces[job_id].audit_results.read_text(encoding="utf-8") for job_id in (alpha_id, bravo_id))
+    assert "AUDIT_FIXTURE_ALPHA" in alpha_result and "AUDIT_FIXTURE_BRAVO" not in alpha_result
+    assert "AUDIT_FIXTURE_BRAVO" in bravo_result and "AUDIT_FIXTURE_ALPHA" not in bravo_result
+    assert request(api_server, "GET", f"/api/audits/{bravo_id}", token="token-a")[0] == 404
