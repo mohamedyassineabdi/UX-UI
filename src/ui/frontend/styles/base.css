@@ -53,7 +53,9 @@ pre { margin: 0; background: var(--color-subtle); padding: var(--space-4); borde
 .inline-alert > div { min-width: 0; flex: 1; }
 .inline-alert strong { display: block; margin-bottom: var(--space-1); }
 .inline-alert p { color: inherit; }
-.inline-alert .button { margin-top: var(--space-2); }
+.inline-alert .button { margin-top: var(--space-3); }
+.inline-alert .disclosure { border-top: 0; margin-top: var(--space-2); }
+.inline-alert .disclosure summary { padding: var(--space-2) 0; min-height: 0; color: inherit; opacity: .8; }
 .alert-error { color: var(--color-danger); background: var(--color-danger-bg); }
 .alert-warning { color: var(--color-warning); background: var(--color-warning-bg); }
 .alert-info { color: var(--color-info); background: var(--color-info-bg); }

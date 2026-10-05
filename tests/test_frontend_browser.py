@@ -314,13 +314,24 @@ def test_capability_network_failure_and_retry(ui):
     page, _, _ = ui
     page.route("**/api/capabilities", lambda route: route.abort())
     page.reload()
-    expect(page.get_by_text("Couldn’t check additional modes")).to_be_visible()
+    expect(page.get_by_text("Advanced audit modes are unavailable")).to_be_visible()
     page.get_by_text("Details", exact=True).click()
-    expect(page.get_by_role("alert")).to_contain_text("Unable to reach the audit server")
+    expect(page.locator(".alert-warning")).to_contain_text("Unable to reach the audit server")
     screenshot(page, "network-error")
     page.unroute("**/api/capabilities")
-    page.get_by_role("button", name="Retry capability check").click()
-    expect(page.get_by_role("alert")).to_have_count(0)
+    page.get_by_role("button", name="Try again").click()
+    expect(page.locator(".alert-warning")).to_have_count(0)
+
+
+def test_signed_out_blocks_start(ui):
+    page, _, _ = ui
+    page.route("**/api/capabilities", lambda route: route.fulfill(status=401, json={"error": "Authentication required."}))
+    page.reload()
+    expect(page.get_by_text("Sign in to start an audit")).to_be_visible()
+    expect(page.get_by_role("button", name="Start audit")).to_be_disabled()
+    page.unroute("**/api/capabilities")
+    page.get_by_role("button", name="I’ve signed in, check again").click()
+    expect(page.get_by_role("button", name="Start audit")).to_be_enabled()
 
 
 def test_review_loading_and_publishing_states(ui):
