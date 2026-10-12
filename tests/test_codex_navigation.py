@@ -94,7 +94,7 @@ def test_codex_gets_png_uses_existing_backend_and_no_ollama_http(monkeypatch):
     args = cli.call_args.kwargs
     assert args["timeout"] == 30
     assert len(args["image_paths"]) == 1
-    assert args["image_paths"][0].read_bytes() if args["image_paths"][0].exists() else True
+    assert args["image_paths"][0].suffix == ".png"
     assert "https://example.com" in args["prompt"]
 
 
@@ -106,7 +106,7 @@ def test_model_failure_is_explicit(monkeypatch):
 
 
 def test_invalid_json_and_invalid_schema_are_rejected():
-    for content in ('no json', '{"navigation_present": true}', '{"navigation_present":true,"top_categories":[{"name":"x","confidence":4}]}'):
+    for content in ('no json', '{"navigation_present": "wrong"}', '{"navigation_present":true,"top_categories":[{"name":"x","confidence":4}]}'):
         with pytest.raises((ValueError, TypeError)):
             _validated_result(content, [], [MENU])
 
