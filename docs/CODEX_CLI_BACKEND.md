@@ -55,3 +55,43 @@ Run contract checks with:
 ```bash
 pytest -q tests/test_codex_cli_backend.py
 ```
+
+## Codex-powered navigation recovery
+
+The optional weak-navigation recovery in `navigator/ai_navigation_helper.py`
+also uses Codex CLI, replacing its earlier Ollama/LLaMA request. Enable it
+for local website audits with:
+
+```dotenv
+CRAWLER_USE_AI_NAV=1
+USE_AI_NAV=1
+CRAWLER_AI_NAV_TIMEOUT_SEC=30
+# Optional: CRAWLER_CODEX_MODEL=
+```
+
+These flags control **whether** the crawler attempts AI recovery; they do not
+change the global LLM or GTM vision backend switches. Navigation recovery is
+only attempted if deterministic discovery finds weak navigation; healthy
+menus do not consume Codex calls. The CLI receives a viewport screenshot and
+a capped list of browser-extracted candidates. A short timeout (5–60 seconds,
+30 by default) is constrained by the remaining audit budget. If CLI inference,
+schema validation or safety checks fail, discovery keeps the deterministic
+result and records an AI-recovery failure.
+
+The model cannot invent a URL or instruct the crawler to click arbitrary
+elements. Only a currently listed DOM candidate with a menu-oriented label
+and sufficient confidence is eligible. Categories without observed DOM
+evidence are filtered. This does not replace the crawler's SSRF, robots,
+interaction-safety or destination validation controls.
+
+Run focused checks:
+
+```powershell
+uv run pytest -q tests/test_codex_cli_backend.py tests/test_codex_navigation.py
+```
+
+After pulling this branch and restarting your local server, repeat a Quick
+website audit with these flags enabled. Inspect each desktop/mobile
+`extra.ai_recovery` section in its saved website menu JSON for
+`used`, `provider`, `reason`, `improved` and `error`. An enabled
+option does not mean Codex was invoked when navigation was already healthy.
