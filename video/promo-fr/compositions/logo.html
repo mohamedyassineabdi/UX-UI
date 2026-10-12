@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: #FFFFFF; overflow: hidden; }
+        #logo-dots { position: absolute; inset: 0; width: 100%; height: 100%; }
+        #logo-mark { position: absolute; left: 580px; top: 392px; width: 760px; height: 296px; opacity: 0; }
+      </style>
+      <div id="root" data-composition-id="logo" data-width="1920" data-height="1080">
+        <canvas id="logo-dots" width="1920" height="1080"></canvas>
+        <img id="logo-mark" src="assets/ey-studio-plus.png" alt="EY Studio+" />
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        // Continues the hook's field (same seed, fallen dots already gone), then gathers the survivors into the logo.
+        const field = createDotField(document.getElementById("logo-dots"), { clear: [700, 280], offset: 4.5 })
+          .fall(.3, -2.95, -1.1)
+          .gatherTo(window.LOGO_POINTS, 0, 1.25)
+          .fadeOut(1.35, 1.75);
+        bindDotField(tl, field, 2);
+        tl.fromTo("#logo-mark", { opacity: 0, scale: .985 }, { opacity: 1, scale: 1, duration: .45, ease: "power2.out" }, 1.2);
+        tl.to("#logo-mark", { opacity: 0, scale: 1.12, filter: "blur(10px)", duration: .25, ease: "power2.in" }, 1.75);
+        window.__timelines["logo"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: var(--canvas); font-family: var(--font); color: var(--ink); overflow: hidden; }
+        .re-head { position: absolute; left: 130px; top: 0; bottom: 0; width: 680px; margin: 0; display: flex; align-items: center; letter-spacing: -.035em; line-height: 1.06; }
+        .re-head span.inner { display: block; }
+        #re-head-a { font-size: 84px; font-weight: 650; }
+        #re-head-b { font-size: 64px; font-weight: 650; }
+        #re-head-b .w:nth-child(n+3):nth-child(-n+4) { color: var(--accent); }
+
+        /* Report cover: the light cover of src/report/client (logo, eyebrow, domain title, score over the dot field). */
+        #re-cover { position: absolute; left: 880px; top: 210px; width: 900px; height: 640px; background: #FFFFFF; border-radius: 22px; border: 1px solid var(--line); box-shadow: 0 44px 100px rgba(31, 36, 48, .16); padding: 40px 48px; overflow: hidden; }
+        #re-cover-top { display: flex; justify-content: space-between; align-items: center; }
+        #re-cover-top img { width: 150px; height: auto; }
+        .re-conf { font-size: 15px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+        .re-eyebrow { margin: 54px 0 10px; display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; }
+        .re-eyebrow i { width: 9px; height: 9px; border-radius: 50%; background: var(--ey); box-shadow: 0 0 0 3px rgba(255, 230, 0, .3); }
+        .re-title { margin: 0; font-size: 92px; font-weight: 300; letter-spacing: -.05em; line-height: 1; }
+        .re-lead { margin: 22px 0 0; width: 400px; font-size: 19px; line-height: 1.45; color: var(--ink-2); }
+        .re-chips { margin: 26px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
+        .re-chips li { display: flex; gap: 12px; font-size: 16px; color: var(--ink); }
+        .re-chips li span { width: 120px; color: var(--muted); }
+        #re-score { position: absolute; right: 30px; bottom: 30px; width: 400px; height: 400px; }
+        #re-score svg.field { position: absolute; inset: 0; width: 100%; height: 100%; }
+        #re-gauge { position: absolute; left: 95px; top: 85px; width: 210px; height: 210px; }
+        #re-gauge-num { position: absolute; left: 95px; top: 85px; width: 210px; height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #re-gauge-num b { font-size: 70px; font-weight: 300; letter-spacing: -.04em; line-height: 1; }
+        #re-gauge-num small { font-size: 16px; color: var(--muted); }
+        .re-score-label { position: absolute; left: 0; right: 0; top: 310px; text-align: center; margin: 0; font-size: 17px; font-weight: 600; color: var(--ink-2); }
+
+        /* Expert card: the roadmap teaser of src/report/roadmap_teaser.py (photo, name, title, booking CTA). */
+        #re-expert { position: absolute; left: 920px; top: 380px; width: 840px; background: #FFFFFF; border-radius: 26px; border: 1px solid var(--line); box-shadow: 0 44px 100px rgba(31, 36, 48, .16); padding: 44px 48px; opacity: 0; }
+        #re-expert-who { display: flex; align-items: center; gap: 30px; }
+        #re-photo { width: 150px; height: 150px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 5px #FFFFFF, 0 0 0 7px var(--accent-soft); }
+        .re-name { margin: 0 0 8px; font-size: 40px; font-weight: 650; letter-spacing: -.025em; }
+        .re-title-x { margin: 0; font-size: 22px; line-height: 1.4; color: var(--muted); }
+        #re-cta { position: relative; margin-top: 38px; height: 76px; border-radius: 18px; background: var(--accent); color: #FFFFFF; display: flex; align-items: center; justify-content: center; gap: 14px; font-size: 28px; font-weight: 650; overflow: hidden; }
+        #re-ripple { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: rgba(255, 255, 255, .45); opacity: 0; }
+        #re-cursor { position: absolute; left: 0; top: 0; width: 46px; height: 46px; opacity: 0; filter: drop-shadow(0 4px 8px rgba(31, 36, 48, .25)); }
+      </style>
+      <div id="root" data-composition-id="report-expert" data-width="1920" data-height="1080">
+        <h2 id="re-head-a" class="re-head"><span class="inner">Un rapport prêt pour le comité.</span></h2>
+        <h2 id="re-head-b" class="re-head"><span class="inner">Puis un expert UX/UI, pour les recommandations et la refonte.</span></h2>
+
+        <div id="re-cover">
+          <div id="re-cover-top"><img src="assets/ey-studio-plus.png" alt="EY Studio+" /><span class="re-conf">Confidentiel · Livrable client</span></div>
+          <p class="re-eyebrow"><i></i>Rapport d’audit UX/UI</p>
+          <h3 class="re-title">exemple.fr</h3>
+          <p class="re-lead">Une évaluation fondée sur des preuves : utilisabilité, accessibilité, navigation, hiérarchie visuelle et contenu.</p>
+          <ul class="re-chips">
+            <li><span>Statut</span>Validé par EY Studio+</li>
+            <li><span>Axes</span>7 axes, 67 critères</li>
+          </ul>
+          <div id="re-score">
+            <svg class="field" id="re-field" viewBox="0 0 400 400" aria-hidden="true"></svg>
+            <svg id="re-gauge" viewBox="0 0 210 210" aria-hidden="true">
+              <circle cx="105" cy="105" r="98" fill="none" stroke="#E4E7EF" stroke-width="6" />
+              <circle id="re-arc" cx="105" cy="105" r="98" fill="none" stroke="#5B3FD9" stroke-width="6" stroke-linecap="round" transform="rotate(-90 105 105)" stroke-dasharray="615.75" stroke-dashoffset="615.75" />
+            </svg>
+            <div id="re-gauge-num"><b id="re-score-num" data-to="64">0</b><small>/ 100</small></div>
+            <p class="re-score-label">Score UX global</p>
+          </div>
+        </div>
+
+        <div id="re-expert">
+          <div id="re-expert-who">
+            <img id="re-photo" src="assets/expert.jpg" alt="Sofiene Mhadheb" />
+            <div>
+              <p class="re-name">Sofiene Mhadheb</p>
+              <p class="re-title-x">Expert en innovation client et design d'expérience, EY Studio+</p>
+            </div>
+          </div>
+          <div id="re-cta"><span>Réserver un appel avec un expert</span><span aria-hidden="true">→</span><i id="re-ripple"></i></div>
+        </div>
+
+        <svg id="re-cursor" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2.5l15 8.2-6.6 1.6 3.9 7.3-2.6 1.4-3.9-7.3L4.9 18.6z" fill="#1F2430" stroke="#FFFFFF" stroke-width="1.3" stroke-linejoin="round" /></svg>
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        // Static dot rings behind the score, the cover's own motif (render.py::_dot_field), scaled to this card.
+        const field = document.getElementById("re-field");
+        if (!field.childElementCount) {
+          const palette = ["#5B3FD9", "#9AA1B5", "#9AA1B5", "#E8C300"];
+          let dots = "";
+          for (let ring = 5; ring <= 14; ring += 1) {
+            const radius = ring * 14, count = Math.round(2 * Math.PI * radius / 16);
+            for (let step = 0; step < count; step += 1) {
+              const angle = 2 * Math.PI * step / count + ring * .37, fade = 1 - (ring - 5) / 10;
+              const x = 200 + radius * Math.cos(angle), y = 190 + radius * Math.sin(angle) * .86;
+              dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(.7 + 1.5 * fade).toFixed(2)}" fill="${palette[(ring + step) % 4]}" opacity="${(.12 + .6 * fade).toFixed(2)}"/>`;
+            }
+          }
+          field.innerHTML = dots;
+        }
+        const scoreNum = document.getElementById("re-score-num"), target = Number(scoreNum.dataset.to), score = { v: 0 };
+        const arc = document.getElementById("re-arc"), circumference = 615.75;
+
+        // (a) 0–2.5 s: the report cover.
+        revealWords(tl, document.querySelector("#re-head-a .inner"), .05);
+        tl.fromTo("#re-cover", { opacity: 0, y: 140, rotationX: 18, rotationY: -12, transformPerspective: 1800, transformOrigin: "50% 100%" },
+          { opacity: 1, y: 0, rotationX: 0, rotationY: 0, duration: .85, ease: "power3.out" }, 0);
+        tl.fromTo(score, { v: 0 }, { v: target, duration: 1.2, ease: "power2.out", onUpdate: () => {
+          scoreNum.textContent = Math.round(score.v);
+          arc.setAttribute("stroke-dashoffset", (circumference * (1 - score.v / 100)).toFixed(2));
+        } }, .45);
+        hideWords(tl, document.querySelector("#re-head-a .inner"), 2.2);
+        tl.to("#re-cover", { opacity: 0, x: 120, scale: .9, rotationY: 14, filter: "blur(6px)", duration: .45, ease: "power2.in" }, 2.2);
+
+        // (b) 2.5–6 s: the expert card, then the cursor books the call at 25.0 s (local 5.0).
+        revealWords(tl, document.querySelector("#re-head-b .inner"), 2.5, { stagger: .05 });
+        tl.fromTo("#re-expert", { opacity: 0, y: 120, rotationX: 16, transformPerspective: 1600, transformOrigin: "50% 100%" },
+          { opacity: 1, y: 0, rotationX: 0, duration: .8, ease: "power3.out" }, 2.55);
+        tl.fromTo("#re-photo", { scale: .8, opacity: 0 }, { scale: 1, opacity: 1, duration: .6, ease: "back.out(1.6)" }, 2.8);
+        tl.fromTo("#re-cursor", { opacity: 0, x: 1560, y: 1000 }, { opacity: 1, x: 1460, y: 900, duration: .3, ease: "power2.out" }, 3.9);
+        tl.to("#re-cursor", { x: 1352, y: 652, duration: .75, ease: "power3.inOut" }, 4.2);
+        tl.to("#re-cursor", { scale: .85, duration: .08, yoyo: true, repeat: 1, ease: "power2.out" }, 5.0);
+        tl.to("#re-cta", { scale: .97, duration: .08, yoyo: true, repeat: 1, ease: "power2.out" }, 5.0);
+        tl.fromTo("#re-ripple", { opacity: .9, scale: 0 }, { opacity: 0, scale: 22, duration: .6, ease: "power2.out" }, 5.02);
+        tl.to("#re-expert, #re-cursor, #re-head-b", { opacity: 0, y: -30, filter: "blur(8px)", duration: .3, ease: "power2.in" }, 5.7);
+        window.__timelines["report-expert"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

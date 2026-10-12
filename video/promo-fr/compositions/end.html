@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: #FFFFFF; font-family: var(--font); color: var(--ink); overflow: hidden; --horizon-top: 770px; }
+        #end-dots { position: absolute; inset: 0; width: 100%; height: 100%; }
+        #end-payoff { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
+        .end-line { margin: 0; font-size: 104px; font-weight: 650; letter-spacing: -.045em; line-height: 1.05; }
+        #end-line-2 { color: var(--accent); }
+        #end-card { position: absolute; left: 0; right: 0; top: 300px; display: flex; flex-direction: column; align-items: center; gap: 44px; }
+        #end-logo { width: 560px; height: auto; opacity: 0; }
+        #end-tagline { margin: 0; font-size: 36px; font-weight: 600; letter-spacing: -.01em; color: var(--ink-2); }
+      </style>
+      <div id="root" data-composition-id="end" data-width="1920" data-height="1080">
+        <canvas id="end-dots" width="1920" height="1080"></canvas>
+        <div class="horizon-wrap" id="end-horizon">
+          <div class="horizon-glow"></div>
+          <div class="horizon"></div>
+        </div>
+        <div id="end-payoff">
+          <p id="end-line-1" class="end-line">L'agent IA audite.</p>
+          <p id="end-line-2" class="end-line">L'expert transforme.</p>
+        </div>
+        <div id="end-card">
+          <img id="end-logo" src="assets/ey-studio-plus.png" alt="EY Studio+" />
+          <p id="end-tagline">Audit UX/UI par agent IA · EY Studio+</p>
+        </div>
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        // (a) 0–2 s: the payoff. (b) 2–4 s: logo and tagline over the light horizon, the faint dot field returning.
+        const field = createDotField(document.getElementById("end-dots"), { clear: [640, 300], strength: .45, offset: 26, seed: 11 })
+          .appear(1.9, 3.2);
+        bindDotField(tl, field, 4);
+        revealWords(tl, document.getElementById("end-line-1"), .1);
+        revealWords(tl, document.getElementById("end-line-2"), .55, { y: 28 });
+        hideWords(tl, document.getElementById("end-payoff"), 1.75);
+        tl.fromTo("#end-horizon", { y: 300, opacity: 0 }, { y: 0, opacity: 1, duration: 1, ease: "power3.out" }, 1.9);
+        tl.fromTo("#end-logo", { opacity: 0, y: 24, filter: "blur(14px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: .7, ease: "power3.out" }, 2.15);
+        revealWords(tl, document.getElementById("end-tagline"), 2.5, { stagger: .05 });
+        window.__timelines["end"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

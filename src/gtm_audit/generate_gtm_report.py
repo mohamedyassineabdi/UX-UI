@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
+from src.report.roadmap_teaser import findings_from_report, render_roadmap_teaser_html
 from .evidence import build_gtm_spotlight
 
 
@@ -1159,8 +1160,18 @@ def render_radar_chart(axes: list[Dict[str, Any]]) -> str:
     if not axes:
         return "<p class='empty'>No scoring data available.</p>"
 
-    labels = [axis_label(axis.get("id"), axis.get("shortName") or axis.get("name") or "Axis") for axis in axes]
-    values = [max(0.0, min(10.0, float(axis.get("score", 0)) / 10.0)) for axis in axes]
+    def radar_value(axis: Dict[str, Any]) -> float | None:
+        try:
+            return max(0.0, min(10.0, float(axis.get("score")) / 10.0))
+        except (TypeError, ValueError):
+            return None  # unscored: no applicable measured evidence this run
+
+    raw_values = [radar_value(axis) for axis in axes]
+    labels = [
+        axis_label(axis.get("id"), axis.get("shortName") or axis.get("name") or "Axis") + (" · not scored" if value is None else "")
+        for axis, value in zip(axes, raw_values)
+    ]
+    values = [0.0 if value is None else value for value in raw_values]
     count = len(labels)
     cx = 310
     cy = 250
@@ -1438,31 +1449,10 @@ def render_html(
     company_name = clean_text(site.get("display_name")) or "Client site"
     pages_count = clean_text(context.get("pagesAudited")) or str(len(scanned_pages_data) or "selected")
     generated_month = date.today().strftime("%B %Y")
-    audit_subject = "captured mobile app screens" if is_live_mobile_audit else "uploaded screenshots" if is_screenshot_audit else ("observed authenticated consultant workspace route" if is_authenticated_workspace else f"{company_name} website")
     tested_url = clean_text(site.get("homepage") or site.get("url"))
     scan_eyebrow = "Screens Captured" if is_live_mobile_audit else "Screenshots Analyzed" if is_screenshot_audit else "Pages Scanned"
     scan_heading = "Representative mobile app screens reviewed during the audit" if is_live_mobile_audit else "Representative screenshots reviewed during the audit" if is_screenshot_audit else ("Pages & states scanned" if is_authenticated_workspace else "Representative pages captured during the audit")
     nav_scope_label = "Input scope" if is_screenshot_audit else "Navigation scope"
-    booking_to = "mohamedyassineabdi75@gmail.com"
-    booking_subject = f"Free 30-minute UX/UI session for {company_name}"
-    booking_body = (
-        f"Hello Yassine,\n\n"
-        f"I reviewed the UX/UI audit for {company_name} and would like to book the free 30-minute session with a UX/UI expert.\n\n"
-        f"Audit subject: {audit_subject}\n"
-        f"Company / project: {company_name}\n"
-        f"Preferred time slots:\n"
-        f"1. \n"
-        f"2. \n"
-        f"3. \n\n"
-        f"Please confirm the best available slot.\n\n"
-        f"Thank you."
-    )
-    booking_href = (
-        "https://mail.google.com/mail/?view=cm&fs=1"
-        f"&to={quote(booking_to, safe='')}"
-        f"&su={quote(booking_subject, safe='')}"
-        f"&body={quote(booking_body, safe='')}"
-    )
     coverage = payload.get("coverage") or {}
     coverage_summary = coverage.get("summary") or {}
     axes_scored = int(summary.get("axesScored") or 0)
@@ -1508,17 +1498,9 @@ def render_html(
         ]
         targeted_follow_up_banner = f'<section style="margin:20px 0;padding:16px;border:1px solid #11886e;border-radius:10px"><strong>Bounded targeted follow-up</strong><ul>{"".join(rows)}</ul></section>'
     hero_lede = "Evidence-based review of one authenticated consultant workspace route. Other modules and unexercised states are outside observed scope." if is_authenticated_workspace else f"Comprehensive evaluation of the user experience and interface of {company_name} website through the active UX/UI axes on {pages_count} main screen(s)."
-    booking_template = "" if is_authenticated_workspace else f'''<template data-deployed-booking-template>
-      <section class="booking-section" id="book-session" aria-labelledby="book-session-title">
-        <div class="booking-copy">
-          <p class="eyebrow">Free expert session</p>
-          <h2 id="book-session-title">Book a 30-minute UX/UI review</h2>
-          <p>Discuss the priority findings in this audit with a UX/UI expert and turn the recommendations into a practical action plan for {html.escape(company_name)}.</p>
-          <ul class="booking-meta" aria-label="Session details"><li>30 minutes</li><li>Free consultation</li><li>Audit action plan</li></ul>
-        </div>
-        <a class="booking-button" href="{html.escape(booking_href)}" target="_blank" rel="noopener">Book a session</a>
-      </section>
-    </template>'''
+    booking_template = render_roadmap_teaser_html(
+        findings_from_report(payload), lang=clean_text(payload.get("language")) or "en", site_url=tested_url
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">

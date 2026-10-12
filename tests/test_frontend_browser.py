@@ -42,7 +42,7 @@ def ui(browser, api_server, monkeypatch, tmp_path):
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.on("console", lambda message: errors.append(message.text) if message.type == "error" and not message.text.startswith("Failed to load resource:") else None)
-    page.goto(f"http://127.0.0.1:{api_server.server_port}")
+    page.goto(f"http://127.0.0.1:{api_server.server_port}/app")
     expect(page.get_by_role("heading", name="New audit", exact=True)).to_be_visible()
     yield page, api_server, errors
     assert not errors, errors
@@ -134,14 +134,22 @@ def complete(page, wait_for_review=True, keyboard=False, count=2, transform=None
     server.JOB_STORE.update(job["id"], status="completed", stage="Ready for local review", resultUrl=f"/audits/{job['id']}/")
     expect(page.get_by_role("heading", name="Audit overview")).to_be_visible(timeout=10000)
     if wait_for_review:
-        control = page.get_by_role("tab", name="Review", exact=True)
+        open_report_for_review(page, keyboard=keyboard)
+    return job, finding
+
+
+def open_report_for_review(page, keyboard=False):
+    """Human review lives on the interactive report page, not in the workspace."""
+    for name in ["Open report", "Review / Edit"]:
+        control = page.get_by_role("link" if name == "Open report" else "button", name=name, exact=True)
         if keyboard:
-            tab_to(page, page.get_by_role("tab", name="Overview", exact=True))
-            page.keyboard.press("ArrowLeft")
+            tab_to(page, control)
+            page.keyboard.press("Enter")
         else:
             control.click()
-        expect(page.get_by_label("Review decision")).to_be_visible()
-    return job, finding
+        if name == "Open report":
+            expect(page.get_by_text("Local report", exact=True)).to_be_visible()
+    expect(page.get_by_label("Review decision")).to_be_visible()
 
 
 @pytest.mark.parametrize("width", [375, 768, 1024, 1440])
@@ -228,7 +236,7 @@ def test_running_cancellation_keeps_polling_until_terminal(ui):
     expect(page.get_by_role("heading", name="This audit was cancelled.")).to_be_visible(timeout=10000)
 
 
-def test_review_save_validate_approve_publish_and_protected_report(ui):
+def test_review_save_and_deploy_from_interactive_report(ui):
     page, instance, _ = ui
     job, finding = complete(page)
     page.get_by_label("Review decision").select_option("confirmed")
@@ -236,26 +244,13 @@ def test_review_save_validate_approve_publish_and_protected_report(ui):
     page.get_by_text("Recommendation & executive priorities", exact=True).click()
     page.get_by_label("Reviewed recommendation", exact=True).fill("Use a darker label and verify its contrast.")
     page.get_by_label("Priority override").select_option("critical")
-    page.get_by_role("button", name="Save revision", exact=True).click()
-    expect(page.get_by_role("button", name="Validate revision")).to_be_enabled()
+    page.get_by_role("button", name="Save edits", exact=True).click()
+    expect(page.get_by_text("Saved locally", exact=True)).to_be_visible()
     review = json.loads(request(instance, "GET", f"/api/audits/{job['id']}/review", token="token-a")[2])
     assert review["revisions"][0]["changes"][finding["deduplicationId"]]["priorityOverride"] == "critical"
-    page.get_by_role("button", name="Validate revision").click()
-    expect(page.get_by_role("button", name="Publish reviewed report")).to_be_enabled()
-    page.get_by_role("button", name="Approve revision").click()
-    expect(page.locator(".review-actionbar .status-approved")).to_be_visible()
-    page.get_by_role("button", name="Publish reviewed report").click()
-    expect(page.get_by_role("link", name="Open published report")).to_be_visible()
+    page.locator(".report-actionbar").get_by_role("button", name="Deploy report", exact=True).click()
+    expect(page.get_by_text("Report deployed", exact=True)).to_be_visible()
     screenshot(page, "review-published-1440-light")
-    with page.expect_popup() as popup:
-        page.get_by_role("button", name="Open report", exact=True).click()
-    report_tab = popup.value
-    expect(report_tab.frame_locator("iframe").get_by_role("heading", name="Protected audit report")).to_be_visible(timeout=10000)
-    expect(report_tab.frame_locator("iframe").get_by_text("Report interaction ready")).to_be_visible()
-    expect(report_tab.frame_locator("iframe").get_by_role("heading")).to_have_css("color", "rgb(30, 60, 90)")
-    assert report_tab.frame_locator("iframe").get_by_alt_text("Captured evidence").evaluate("image => image.naturalWidth") == 1
-    assert report_tab.evaluate("window.opener === null")
-    report_tab.close()
     axe(page)
     for width in [375, 768, 1024, 1440]:
         page.set_viewport_size({"width": width, "height": 1000})
@@ -264,39 +259,34 @@ def test_review_save_validate_approve_publish_and_protected_report(ui):
         screenshot(page, f"review-{width}-light")
 
 
-def test_review_conflict_preserves_draft_and_blocks_transitions(ui):
+def test_review_conflict_preserves_draft_and_never_overwrites(ui):
     page, instance, _ = ui
     job, finding = complete(page)
     page.get_by_label("Review note", exact=True).fill("My unsaved draft")
     request(instance, "POST", f"/api/audits/{job['id']}/revisions", token="token-a", body={"findingChanges": {finding["deduplicationId"]: {"reviewNote": "Another reviewer's edit"}}, "expectedRevisionId": None})
-    page.get_by_role("button", name="Save revision", exact=True).click()
-    expect(page.get_by_text("This review was changed in another session. Refresh before saving again.")).to_be_visible()
+    page.get_by_role("button", name="Save edits", exact=True).click()
+    expect(page.get_by_text("This review was changed in another session", exact=True)).to_be_visible()
     expect(page.get_by_label("Review note", exact=True)).to_have_value("My unsaved draft")
-    page.get_by_role("button", name="Refresh latest revision").click()
-    expect(page.get_by_role("button", name="Use latest revision", exact=True)).to_be_visible()
-    expect(page.get_by_role("button", name="Save revision", exact=True)).to_be_disabled()
+    expect(page.get_by_role("button", name="Save edits", exact=True)).to_be_disabled()
+    expect(page.locator(".report-actionbar").get_by_role("button", name="Deploy report", exact=True)).to_be_disabled()
     screenshot(page, "review-conflict")
-    page.get_by_role("button", name="Use my draft as next revision").click()
-    page.get_by_role("button", name="Save revision", exact=True).click()
-    expect(page.get_by_text("All changes saved", exact=True)).to_be_visible()
     review = json.loads(request(instance, "GET", f"/api/audits/{job['id']}/review", token="token-a")[2])
-    assert len(review["revisions"]) == 2
-    assert review["revisions"][-1]["changes"][finding["deduplicationId"]]["reviewNote"] == "My unsaved draft"
+    assert len(review["revisions"]) == 1
+    assert review["revisions"][0]["changes"][finding["deduplicationId"]]["reviewNote"] == "Another reviewer's edit"
 
 
-def test_suppression_validation_and_draft_survives_navigation(ui):
+def test_suppression_requires_a_reason_before_saving(ui):
     page, _, _ = ui
     complete(page)
     page.get_by_text("Recommendation & executive priorities", exact=True).click()
     page.get_by_label("Suppress from executive priorities").check()
-    page.get_by_role("button", name="Save revision", exact=True).click()
+    page.get_by_role("button", name="Save edits", exact=True).click()
     expect(page.get_by_text("Add a suppression reason for every suppressed finding.")).to_be_visible()
+    expect(page.get_by_text("Saved locally", exact=True)).to_have_count(0)
     page.get_by_label("Suppression reason", exact=True).fill("Confirmed duplicate")
-    page.get_by_role("navigation", name="Workspace").get_by_role("button", name="New audit").click()
-    page.get_by_role("button", name="Current audit").click()
-    expect(page.get_by_label("Suppression reason", exact=True)).to_have_value("Confirmed duplicate")
-    page.get_by_role("button", name="Save revision", exact=True).click()
-    expect(page.get_by_role("button", name="Validate revision")).to_be_enabled()
+    page.get_by_role("button", name="Save edits", exact=True).click()
+    expect(page.get_by_text("Saved locally", exact=True)).to_be_visible()
+    expect(page.get_by_text("Add a suppression reason for every suppressed finding.")).to_have_count(0)
 
 
 def test_capability_errors_and_detailed_mode(ui, monkeypatch):
@@ -314,78 +304,67 @@ def test_capability_network_failure_and_retry(ui):
     page, _, _ = ui
     page.route("**/api/capabilities", lambda route: route.abort())
     page.reload()
-    expect(page.get_by_text("Couldn’t check additional modes")).to_be_visible()
+    expect(page.get_by_text("Advanced audit modes are unavailable")).to_be_visible()
     page.get_by_text("Details", exact=True).click()
-    expect(page.get_by_role("alert")).to_contain_text("Unable to reach the audit server")
+    expect(page.locator(".alert-warning")).to_contain_text("Unable to reach the audit server")
     screenshot(page, "network-error")
     page.unroute("**/api/capabilities")
-    page.get_by_role("button", name="Retry capability check").click()
-    expect(page.get_by_role("alert")).to_have_count(0)
+    page.get_by_role("button", name="Try again").click()
+    expect(page.locator(".alert-warning")).to_have_count(0)
 
 
-def test_review_loading_and_publishing_states(ui):
+def test_signed_out_blocks_start(ui):
+    page, _, _ = ui
+    page.route("**/api/capabilities", lambda route: route.fulfill(status=401, json={"error": "Authentication required."}))
+    page.reload()
+    expect(page.get_by_text("Sign in to start an audit")).to_be_visible()
+    expect(page.get_by_role("button", name="Start audit")).to_be_disabled()
+    page.unroute("**/api/capabilities")
+    page.get_by_role("button", name="I’ve signed in, check again").click()
+    expect(page.get_by_role("button", name="Start audit")).to_be_enabled()
+
+
+def test_report_deploying_state_locks_actions(ui):
     page, _, _ = ui
     pending = []
-    page.route("**/review", lambda route: pending.append(route))
-    complete(page, wait_for_review=False)
-    page.get_by_role("tab", name="Review", exact=True).click()
-    expect(page.get_by_text("Loading review…", exact=True)).to_be_visible()
-    screenshot(page, "review-loading")
-    pending.pop().continue_()
-    page.unroute("**/review")
-    expect(page.get_by_label("Review decision")).to_be_visible()
-    screenshot(page, "review-clean")
+    complete(page)
     page.get_by_label("Review decision").select_option("accepted")
-    page.get_by_role("button", name="Save revision", exact=True).click()
-    page.get_by_role("button", name="Validate revision").click()
+    page.get_by_role("button", name="Save edits", exact=True).click()
+    expect(page.get_by_text("Saved locally", exact=True)).to_be_visible()
     page.route("**/publish", lambda route: pending.append(route))
-    page.get_by_role("button", name="Publish reviewed report").click()
-    expect(page.get_by_role("button", name="Publishing…")).to_be_disabled()
-    expect(page.get_by_label("Review decision")).to_be_disabled()
+    page.locator(".report-actionbar").get_by_role("button", name="Deploy report", exact=True).click()
+    expect(page.locator(".report-actionbar").get_by_role("button", name="Deploying…")).to_be_disabled()
+    expect(page.get_by_role("button", name="Save edits", exact=True)).to_be_disabled()
     screenshot(page, "review-publishing")
     pending.pop().continue_()
-    expect(page.get_by_role("link", name="Open published report")).to_be_visible()
+    expect(page.get_by_text("Report deployed", exact=True)).to_be_visible()
 
 
-def test_server_validation_keeps_draft_and_blocks_next_action(ui):
+def test_server_validation_keeps_draft_and_blocks_deployment(ui):
     page, _, _ = ui
     complete(page)
     page.get_by_label("Review note", exact=True).fill("Keep this text")
     page.route("**/revisions", lambda route: route.fulfill(status=400, json={"error": "Machine-owned fields cannot be revised."}))
-    page.get_by_role("button", name="Save revision", exact=True).click()
+    page.get_by_role("button", name="Save edits", exact=True).click()
     expect(page.get_by_text("Couldn’t save your changes", exact=True)).to_be_visible()
     expect(page.get_by_label("Review note", exact=True)).to_have_value("Keep this text")
-    assert page.get_by_role("button", name="Validate revision").count() == 0
+    expect(page.locator(".report-actionbar").get_by_role("button", name="Deploy report", exact=True)).to_be_disabled()
     screenshot(page, "review-validation-error")
 
 
-def test_dismissed_unsaved_confirmation_never_creates_a_job(ui):
-    page, _, _ = ui
-    complete(page)
-    page.get_by_label("Review note", exact=True).fill("Keep this draft")
-    page.get_by_role("navigation", name="Workspace").get_by_role("button", name="New audit").click()
-    posts = []
-    page.on("request", lambda req: posts.append(req.url) if req.method == "POST" else None)
-    page.once("dialog", lambda dialog: dialog.dismiss())
-    page.get_by_role("button", name="Start audit", exact=True).click()
-    assert not posts
-    page.get_by_role("button", name="Current audit").click()
-    expect(page.get_by_label("Review note", exact=True)).to_have_value("Keep this draft")
-
-
-def test_keyboard_only_creation_and_review_actions(ui):
+def test_keyboard_only_creation_review_and_deploy(ui):
     page, _, _ = ui
     complete(page, keyboard=True)
     tab_to(page, page.get_by_label("Review note", exact=True))
     page.keyboard.insert_text("Keyboard-reviewed finding")
-    for action in ["Save revision", "Validate revision", "Approve revision", "Publish reviewed report"]:
-        control = page.get_by_role("button", name=action, exact=True)
+    for action in ["Save edits", "Deploy report"]:
+        control = page.locator(".report-actionbar").get_by_role("button", name=action, exact=True)
         expect(control).to_be_enabled()
         tab_to(page, control)
         assert control.evaluate("element => getComputedStyle(element).outlineStyle") != "none"
         screenshot(page, "keyboard-focus-" + action.split()[0].lower())
         page.keyboard.press("Enter")
-    expect(page.get_by_role("link", name="Open published report")).to_be_visible()
+    expect(page.get_by_text("Report deployed", exact=True)).to_be_visible()
 
 
 def test_expired_session_is_explicit(ui):
@@ -400,39 +379,24 @@ def test_expired_session_is_explicit(ui):
     expect(page.get_by_role("alert")).to_contain_text("Sign in through your portal")
 
 
-def test_review_action_error_ownership_and_success_clear_stale_error(ui):
+def test_deploy_error_clears_on_retry_and_on_draft_change(ui):
     page, _, _ = ui
     complete(page)
     page.get_by_label("Review note", exact=True).fill("Evidence checked")
-    page.get_by_role("button", name="Save revision", exact=True).click()
-    page.route("**/validate", lambda route: route.fulfill(status=500, json={"error": "Temporary validation failure"}))
-    page.get_by_role("button", name="Validate revision").click()
-    expect(page.get_by_text("Couldn’t validate this revision", exact=True)).to_be_visible()
-    screenshot(page, "review-validation-error")
-    page.unroute("**/validate")
-    page.get_by_role("button", name="Validate revision").click()
-    expect(page.locator(".review-actionbar .status-validated")).to_be_visible()
-    expect(page.get_by_role("alert")).to_have_count(0)
-    screenshot(page, "review-validated")
-    page.route("**/approve", lambda route: route.fulfill(status=500, json={"error": "Approval unavailable"}))
-    page.get_by_role("button", name="Approve revision").click()
-    expect(page.get_by_text("Couldn’t approve this revision", exact=True)).to_be_visible()
-    expect(page.locator(".review-actionbar .status-validated")).to_be_visible()
-    # A validated revision can still publish after optional approval fails.
+    page.get_by_role("button", name="Save edits", exact=True).click()
+    expect(page.get_by_text("Saved locally", exact=True)).to_be_visible()
+    deploy = page.locator(".report-actionbar").get_by_role("button", name="Deploy report", exact=True)
     page.route("**/publish", lambda route: route.fulfill(status=503, json={"error": "Publication unavailable"}))
-    page.get_by_role("button", name="Publish reviewed report").click()
+    deploy.click()
     expect(page.get_by_text("Couldn’t publish the reviewed report", exact=True)).to_be_visible()
-    expect(page.get_by_text("Couldn’t approve this revision", exact=True)).to_have_count(0)
-    page.get_by_role("button", name="Dismiss error").click()
-    expect(page.get_by_role("alert")).to_have_count(0)
-    page.get_by_role("button", name="Publish reviewed report").click()
-    expect(page.get_by_text("Couldn’t publish the reviewed report", exact=True)).to_be_visible()
+    screenshot(page, "review-publish-error")
     page.unroute("**/publish")
-    page.get_by_role("button", name="Publish reviewed report").click()
-    expect(page.get_by_role("link", name="Open published report")).to_be_visible()
+    deploy.click()
+    expect(page.get_by_text("Report deployed", exact=True)).to_be_visible()
     expect(page.get_by_role("alert")).to_have_count(0)
-    # Changing the relevant draft clears an error against its previous state.
-    page.get_by_role("button", name="Approve revision").click()
+    # Changing the draft clears an error raised against its previous state.
+    page.route("**/publish", lambda route: route.fulfill(status=503, json={"error": "Publication unavailable"}))
+    deploy.click()
     expect(page.get_by_role("alert")).to_be_visible()
     page.get_by_label("Review note", exact=True).fill("Changed judgment")
     expect(page.get_by_role("alert")).to_have_count(0)
@@ -442,7 +406,8 @@ def test_review_action_error_ownership_and_success_clear_stale_error(ui):
 def test_finding_scale_filters_evidence_and_mobile_drill_in(ui, count):
     page, _, _ = ui
     complete(page, wait_for_review=False, count=count)
-    page.get_by_role("tab", name="Findings", exact=False).click()
+    page.get_by_role("link", name="Open report", exact=True).click()
+    page.get_by_role("button", name="Review / Edit", exact=True).click()  # the client report is the default view
     expect(page.locator(".finding-item")).to_have_count(min(count, 25))
     if count == 1:
         expect(page.get_by_label("Find a finding")).to_have_count(0)
@@ -452,9 +417,6 @@ def test_finding_scale_filters_evidence_and_mobile_drill_in(ui, count):
         expect(page.locator(".finding-item")).to_have_count(1)
         page.locator(".finding-item").click()
         expect(page.get_by_role("heading", name="Form feedback needs a clear recovery path")).to_be_visible()
-        page.get_by_role("tab", name="Overview", exact=True).click()
-        page.get_by_role("tab", name="Findings", exact=False).click()
-        expect(page.get_by_label("Find a finding")).to_have_value("recovery")
         page.get_by_role("button", name="Clear filters").click()
         page.get_by_label("Severity", exact=True).select_option("high")
         assert page.locator(".finding-item").count() >= 1
@@ -475,7 +437,7 @@ def test_finding_scale_filters_evidence_and_mobile_drill_in(ui, count):
     expect(page.get_by_text("button.checkout", exact=True)).to_be_visible()
     page.locator(".finding-detail").evaluate("element => element.scrollTop = 0")
     screenshot(page, f"findings-{count}-1440")
-    page.get_by_role("tab", name="Review", exact=True).click()
+    page.get_by_role("button", name="Review / Edit", exact=True).click()
     page.get_by_label("Review decision").select_option("confirmed")
     if count > 1:
         page.get_by_label("Review state").select_option("confirmed")
@@ -525,7 +487,7 @@ def test_missing_zero_and_model_scores_are_not_conflated(ui):
     screenshot(page, "overview-missing-measurement")
 
 
-def test_skip_link_light_theme_text_zoom_and_keyboard_tabs(ui):
+def test_skip_link_light_theme_and_text_zoom(ui):
     page, _, _ = ui
     page.emulate_media(color_scheme="dark", reduced_motion="reduce")
     page.reload()
@@ -537,14 +499,6 @@ def test_skip_link_light_theme_text_zoom_and_keyboard_tabs(ui):
     expect(page.locator("main")).to_be_focused()
     expect(skip).to_have_css("clip-path", "inset(50%)")
     complete(page, wait_for_review=False)
-    tab = page.get_by_role("tab", name="Overview", exact=True)
-    tab.focus()
-    page.keyboard.press("ArrowRight")
-    expect(page.get_by_role("tab", name="Findings", exact=False)).to_be_focused()
-    page.keyboard.press("End")
-    expect(page.get_by_role("tab", name="Review", exact=True)).to_be_focused()
-    page.keyboard.press("Home")
-    expect(tab).to_be_focused()
     page.evaluate("document.documentElement.style.fontSize = '200%'")
     page.set_viewport_size({"width": 375, "height": 1000})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -557,16 +511,13 @@ def test_successful_mutation_survives_failed_refresh(ui):
     job, _ = complete(page)
     page.get_by_label("Review note", exact=True).fill("Save this authoritative result")
     page.route("**/review", lambda route: route.fulfill(status=503, json={"error": "Read replica unavailable"}))
-    page.get_by_role("button", name="Save revision", exact=True).click()
-    expect(page.get_by_text("Action completed; revision refresh is unavailable", exact=True)).to_be_visible()
-    expect(page.get_by_text("All changes saved", exact=True)).to_be_visible()
-    expect(page.get_by_role("button", name="Validate revision")).to_be_enabled()
+    page.get_by_role("button", name="Save edits", exact=True).click()
+    expect(page.get_by_text("Couldn’t refresh the revision", exact=True)).to_be_visible()
+    expect(page.get_by_text("Saved locally", exact=True)).to_be_visible()
     review = json.loads(request(instance, "GET", f"/api/audits/{job['id']}/review", token="token-a")[2])
     assert review["reviewStatus"] == "in_review"
     page.unroute("**/review")
-    page.get_by_role("button", name="Validate revision").click()
-    expect(page.locator(".review-actionbar .status-validated")).to_be_visible()
-    expect(page.get_by_role("alert")).to_have_count(0)
+    expect(page.locator(".report-actionbar").get_by_role("button", name="Deploy report", exact=True)).to_be_enabled()
 
 
 def test_post_save_refresh_detects_another_revision_without_overwriting_draft(ui):
@@ -581,13 +532,12 @@ def test_post_save_refresh_detects_another_revision_without_overwriting_draft(ui
         assert result[0] == 201
         route.continue_()
     page.route("**/review", replace_revision, times=1)
-    page.get_by_role("button", name="Save revision", exact=True).click()
-    expect(page.get_by_text("This review was changed in another session. Refresh before saving again.")).to_be_visible()
+    page.get_by_role("button", name="Save edits", exact=True).click()
+    expect(page.get_by_text("This review was changed in another session", exact=True)).to_be_visible()
     expect(page.get_by_label("Review note", exact=True)).to_have_value("My saved judgment")
-    expect(page.get_by_role("button", name="Validate revision")).to_be_disabled()
-    page.get_by_role("button", name="Use latest revision", exact=True).click()
-    expect(page.get_by_label("Review note", exact=True)).to_have_value("Concurrent judgment")
-    expect(page.get_by_role("button", name="Validate revision")).to_be_enabled()
+    review = json.loads(request(instance, "GET", f"/api/audits/{job['id']}/review", token="token-a")[2])
+    notes = [revision["changes"][finding["deduplicationId"]]["reviewNote"] for revision in review["revisions"]]
+    assert notes == ["My saved judgment", "Concurrent judgment"]
 
 
 def test_completed_overview_opens_local_interactive_report_and_deploys_saved_revision(ui):
@@ -646,3 +596,339 @@ def test_interactive_report_blocks_unsaved_deployment_and_keeps_local_revision_o
     expect(page.get_by_text("Couldn’t publish the reviewed report", exact=True)).to_be_visible()
     expect(page.get_by_text("Saved locally", exact=True)).to_be_visible()
 
+
+def test_landing_page_runs_demo_and_has_one_start_action(ui):
+    page, instance, _ = ui
+    base = f"http://127.0.0.1:{instance.server_port}"
+    page.goto(base + "/")
+    expect(page.get_by_role("heading", level=1)).to_have_text("UX/UI audits you can trace back to evidence.")
+    expect(page.get_by_role("img", name="Home page of Citylights", exact=False)).to_be_visible()
+    assert page.get_by_role("img", name="Home page of Citylights", exact=False).evaluate("image => image.naturalWidth") > 0
+    expect(page.get_by_role("status")).to_contain_text("UX/UI audit complete")
+    expect(page.locator(".lp-log ol li")).to_have_count(5)
+    expect(page.locator(".lp-dims li")).to_have_count(7)
+    expect(page.locator(".lp-axes li")).to_have_count(7)
+    expect(page.get_by_text("Measured · axe-core", exact=True)).to_have_count(1)
+    hrefs = page.get_by_role("main").get_by_role("link").evaluate_all("links => links.map(link => link.getAttribute('href'))")
+    assert set(hrefs) <= {"/app", "#demo"} and hrefs.count("/app") == 2, hrefs
+    assert page.evaluate("document.querySelector('meta[name=description]').content").startswith("Audit websites")
+    expect(page.locator("link[rel=alternate][hreflang=fr]")).to_have_attribute("href", base + "/?lang=fr")
+    for width in [375, 768, 1024, 1440]:
+        page.set_viewport_size({"width": width, "height": 900})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        axe(page)
+        screenshot(page, f"landing-{width}-light")
+    page.get_by_role("link", name="Start an audit").first.click()
+    expect(page).to_have_url(base + "/app")
+    expect(page.get_by_role("heading", name="New audit", exact=True)).to_be_visible()
+    expect(page.locator(".source-icon .icon-3d")).to_have_count(4)
+    screenshot(page, "setup-3d-icons")
+    page.get_by_role("link", name="EY Studio Plus home").click()
+    expect(page).to_have_url(base + "/")
+
+
+def test_landing_page_switches_between_english_and_french(ui):
+    page, instance, _ = ui
+    base = f"http://127.0.0.1:{instance.server_port}"
+    page.goto(base + "/")
+    page.get_by_role("navigation", name="Language").get_by_role("link", name="Français").click()
+    expect(page).to_have_url(base + "/?lang=fr")
+    expect(page.get_by_role("heading", level=1)).to_have_text("Des audits UX/UI fondés sur des preuves.")
+    expect(page.locator("html")).to_have_attribute("lang", "fr")
+    expect(page).to_have_title("Outil d’audit UX/UI fondé sur des preuves | EY Studio+")
+    expect(page.get_by_role("link", name="Lancer un audit").first).to_be_visible()
+    expect(page.locator("link[rel=canonical]")).to_have_attribute("href", base + "/?lang=fr")
+    axe(page)
+    page.goto(base + "/")
+    expect(page.get_by_role("heading", level=1)).to_have_text("Des audits UX/UI fondés sur des preuves.")
+    page.get_by_role("link", name="English").click()
+    expect(page).to_have_url(base + "/")
+    expect(page.locator("html")).to_have_attribute("lang", "en")
+
+
+FORBIDDEN_COPY = ("Claude", "VLM", "machine finding")
+
+
+def test_landing_how_it_works_and_copy(ui):
+    page, instance, _ = ui
+    base = f"http://127.0.0.1:{instance.server_port}"
+    methodology = json.loads((ROOT / "shared/config/audit_methodology_v3.json").read_text(encoding="utf-8"))
+    criteria_total = sum(len(axis["criteria"]) for axis in methodology["axes"])
+    page.goto(base + "/")
+    steps = page.locator("ol.lp-how-steps > li")
+    expect(steps).to_have_count(3)
+    expect(page.locator("ol.lp-how-steps h3")).to_have_count(3)
+    expect(steps.first).to_have_attribute("aria-current", "step")
+    expect(page.get_by_role("banner").get_by_role("link", name="Open the app")).to_have_attribute("href", "/app")
+    expect(page.get_by_role("link", name="See it work")).to_have_attribute("href", "#demo")
+    expect(page.get_by_role("heading", name="How every audit is built")).to_be_visible()
+    expect(page.get_by_text("See the evidence behind your product’s UX.")).to_be_visible()
+    expect(steps.nth(1)).to_contain_text(f"Check 7 axes, {criteria_total} criteria.")
+    text = page.evaluate("document.body.innerText")
+    assert not [word for word in FORBIDDEN_COPY if word in text]
+    page.goto(base + "/?lang=fr")
+    for copy in ("Voir l’audit en action", "Ouvrir l’application", "Comment chaque audit est construit", "Voyez les preuves derrière l’UX de votre produit."):
+        expect(page.get_by_text(copy, exact=True).first).to_be_visible()
+    expect(steps.nth(1)).to_contain_text(f"Vérifier 7 axes, {criteria_total} critères.")
+    text = page.evaluate("document.body.innerText")
+    assert not [word for word in FORBIDDEN_COPY if word in text]
+
+
+def test_landing_header_turns_solid_after_hero(ui):
+    page, instance, _ = ui
+    page.goto(f"http://127.0.0.1:{instance.server_port}/")
+    header = page.locator(".lp-header")
+    expect(header).not_to_have_class(re.compile(r"\bis-solid\b"))
+    page.mouse.wheel(0, 260)
+    expect(header).to_have_class(re.compile(r"\bis-solid\b"))
+    page.locator("#demo").scroll_into_view_if_needed()
+    expect(header).to_have_class(re.compile(r"\bis-solid\b"))
+    assert "blur" in header.evaluate("node => getComputedStyle(node).backdropFilter")
+    expect(page.locator(".lp-footer .lp-wordmark")).to_have_attribute("aria-hidden", "true")
+
+
+@pytest.mark.parametrize("lang", ["en", "fr"])
+def test_landing_fits_every_width(ui, lang):
+    page, instance, _ = ui
+    page.goto(f"http://127.0.0.1:{instance.server_port}/?lang={lang}")
+    for width in [320, 360, 375, 768, 1024, 1440]:
+        page.set_viewport_size({"width": width, "height": 900})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), width
+        clipped = page.locator(".lp-header a").evaluate_all("links => links.filter(link => link.offsetParent && link.getBoundingClientRect().right > innerWidth).map(link => link.textContent)")
+        assert clipped == [], (width, clipped)
+        hero = page.locator(".lp-hero").bounding_box()
+        assert hero["height"] >= 900 - 1, (width, hero)
+        axe(page)
+        screenshot(page, f"landing-{lang}-{width}")
+
+
+def _landing_in_motion(page, instance, query=""):
+    page.emulate_media(reduced_motion="no-preference")
+    page.goto(f"http://127.0.0.1:{instance.server_port}/{query}")
+
+
+def test_landing_demo_starts_when_scrolled_into_view(ui):
+    page, instance, _ = ui
+    _landing_in_motion(page, instance)
+    status = page.locator(".lp-demo").get_by_role("status")
+    page.wait_for_timeout(4000)  # longer than one full scan: an on-mount start would be complete by now
+    expect(status).not_to_contain_text("UX/UI audit complete")
+    page.locator(".lp-browser").scroll_into_view_if_needed()
+    expect(status).to_contain_text("UX/UI audit complete", timeout=8000)
+    expect(page.locator(".lp-log ol li")).to_have_count(5)
+    expect(page.locator(".lp-dims li")).to_have_count(7)
+    expect(page.get_by_text("Measured · axe-core", exact=True)).to_have_count(1)
+    page.get_by_role("button", name="Replay").click()
+    expect(status).not_to_contain_text("UX/UI audit complete")
+    expect(status).to_contain_text("UX/UI audit complete", timeout=8000)
+
+
+def test_landing_demo_starts_on_a_phone(ui):
+    page, instance, _ = ui
+    page.set_viewport_size({"width": 375, "height": 667})
+    _landing_in_motion(page, instance)
+    page.locator(".lp-browser").scroll_into_view_if_needed()
+    expect(page.locator(".lp-demo").get_by_role("status")).to_contain_text("UX/UI audit complete", timeout=8000)
+
+
+def test_landing_see_it_work_jumps_to_the_demo(ui):
+    page, instance, _ = ui
+    _landing_in_motion(page, instance)
+    page.get_by_role("link", name="See it work").click()
+    expect(page.locator(".lp-demo").get_by_role("status")).to_contain_text("UX/UI audit complete", timeout=8000)
+    header = page.locator(".lp-header").bounding_box()
+    assert page.locator("#demo").bounding_box()["y"] >= header["y"] + header["height"]
+
+
+def test_landing_reduced_motion_is_static(ui):
+    page, instance, _ = ui
+    page.goto(f"http://127.0.0.1:{instance.server_port}/")
+    expect(page.locator(".lp-demo").get_by_role("status")).to_contain_text("UX/UI audit complete")
+    for field in (page.locator(".lp-hero canvas.lp-field"), page.locator(".lp-closing canvas.lp-field")):
+        expect(field).to_have_attribute("aria-hidden", "true")
+        assert field.evaluate(INKED_PIXELS) > 0
+    reveals = page.locator(".lp-reveal, .lp-reveal > li")
+    assert reveals.count() > 0
+    assert reveals.evaluate_all("nodes => nodes.filter(node => getComputedStyle(node).opacity !== '1').length") == 0
+
+
+def test_landing_how_it_works_follows_scroll(ui):
+    page, instance, _ = ui
+    page.goto(f"http://127.0.0.1:{instance.server_port}/")
+    steps = page.locator("ol.lp-how-steps > li")
+    stage = page.locator(".lp-how-stage")
+    assert stage.evaluate("node => getComputedStyle(node).position") == "sticky"
+    steps.nth(2).evaluate("node => node.scrollIntoView({block: 'center'})")
+    expect(steps.nth(2)).to_have_attribute("aria-current", "step")
+    for index in (0, 1):
+        expect(steps.nth(index)).not_to_have_attribute("aria-current", "step")
+    expect(stage).to_contain_text("Deployed")
+    expect(stage).to_be_in_viewport()
+    steps.nth(1).evaluate("node => node.scrollIntoView({block: 'center'})")
+    expect(steps.nth(1)).to_have_attribute("aria-current", "step")
+    expect(stage).to_contain_text("Coverage")
+    page.set_viewport_size({"width": 375, "height": 800})
+    assert stage.evaluate("node => getComputedStyle(node).position") != "sticky"
+    expect(stage).to_be_hidden()
+    panels = page.locator(".lp-how-step .lp-how-panel")
+    expect(panels).to_have_count(3)
+    for index in range(3):
+        expect(panels.nth(index)).to_be_visible()
+
+
+INKED_PIXELS = """canvas => { const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    let inked = 0; for (let i = 3; i < data.length; i += 4) if (data[i]) inked++; return inked; }"""
+CENTRE_ALPHA = "canvas => canvas.getContext('2d').getImageData(canvas.width >> 1, canvas.height >> 1, 1, 1).data[3]"
+
+
+def test_landing_dot_field_draws_and_moves(ui):
+    page, instance, _ = ui
+    _landing_in_motion(page, instance)
+    field = page.locator(".lp-hero canvas[aria-hidden=true]")
+    expect(field).to_have_count(1)
+    page.wait_for_timeout(1200)
+    assert field.evaluate(INKED_PIXELS) > 0
+    assert field.evaluate(CENTRE_ALPHA) == 0
+    first = field.evaluate("canvas => canvas.toDataURL()")
+    page.wait_for_timeout(300)
+    assert field.evaluate("canvas => canvas.toDataURL()") != first
+    page.locator(".lp-footer").scroll_into_view_if_needed()
+    page.wait_for_timeout(300)
+    first = field.evaluate("canvas => canvas.toDataURL()")
+    page.wait_for_timeout(300)
+    assert field.evaluate("canvas => canvas.toDataURL()") == first
+
+
+def test_landing_dot_field_first_paint_starts_blank(ui):
+    page, instance, _ = ui
+    # Freeze the loop so only the first paint remains, and start the clock 5 s in, as on a slow load.
+    page.add_init_script("window.requestAnimationFrame = () => 0; const now = performance.now.bind(performance); performance.now = () => now() + 5000;")
+    _landing_in_motion(page, instance)
+    page.wait_for_timeout(1000)
+    field = page.locator(".lp-hero canvas.lp-field")
+    expect(field).to_have_attribute("data-dots", re.compile(r"^[1-9]\d*$"))
+    assert field.evaluate(INKED_PIXELS) == 0
+
+def test_landing_dot_field_limits(ui):
+    page, instance, _ = ui
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(f"http://127.0.0.1:{instance.server_port}/")
+    field = page.locator(".lp-hero canvas.lp-field")
+    expect(field).to_have_attribute("data-dots", re.compile(r"^[1-9]\d*$"))
+    desktop = int(field.get_attribute("data-dots"))
+    assert desktop <= 1400
+    page.set_viewport_size({"width": 3840, "height": 2160})
+    expect(field).not_to_have_attribute("data-dots", str(desktop))
+    assert 0 < int(field.get_attribute("data-dots")) <= 1400
+    page.set_viewport_size({"width": 375, "height": 900})
+    expect(field).not_to_have_attribute("data-dots", str(desktop))
+    page.wait_for_timeout(200)
+    assert field.evaluate("canvas => canvas.width === Math.round(canvas.clientWidth * Math.min(devicePixelRatio, 2))")
+    assert field.evaluate(CENTRE_ALPHA) == 0
+
+def _open_report_with_teaser(page):
+    page.route(re.compile(r"https://(app\.)?cal\.com/.*"), lambda route: route.fulfill(content_type="text/html", body="<!doctype html><html lang='en'><title>Booking</title><body>Booking calendar</body></html>"))
+    job, finding = complete(page, wait_for_review=False)
+    page.get_by_role("link", name="Open report", exact=True).click()
+    expect(page.get_by_text("Local report", exact=True)).to_be_visible()
+    teaser = page.locator("#roadmap-teaser")
+    teaser.scroll_into_view_if_needed()
+    expect(teaser).to_be_visible()
+    return job, finding, teaser
+
+
+def test_roadmap_teaser_shows_counts_and_never_recommendation_text(ui):
+    page, _api, _errors = ui
+    _job, finding, teaser = _open_report_with_teaser(page)
+    expect(teaser.get_by_role("heading", level=2).first).to_have_text("Turn this audit into a redesign that meets your business goals")
+    expect(teaser.locator(".rt-chip")).to_have_text(["1 quick win", "1 structural change", "2 areas to improve"])
+    expect(teaser.get_by_text("Sofiene Mhadheb")).to_be_visible()
+    assert finding["recommendation"] not in teaser.inner_text()
+    assert finding["recommendation"] not in teaser.inner_html()
+    axe(page)
+    screenshot(page, "roadmap-teaser")
+
+
+def test_roadmap_teaser_cta_opens_booking_dialog_and_restores_focus(ui):
+    page, _api, _errors = ui
+    _open_report_with_teaser(page)
+    cta = page.get_by_role("link", name=re.compile("Book a call with an expert"))
+    assert cta.get_attribute("target") == "_blank"
+    assert cta.get_attribute("href").startswith("https://cal.com/sofiene-m-hadheb-nwve91/30min?")
+    assert "embed=true" not in cta.get_attribute("href")
+    cta.click()
+    dialog = page.get_by_role("dialog", name="Book your expert session")
+    expect(dialog).to_be_visible()
+    frame = dialog.locator("iframe")
+    assert frame.get_attribute("src").startswith("https://cal.com/sofiene-m-hadheb-nwve91/30min?") and "embed=true" in frame.get_attribute("src")
+    expect(dialog.get_by_role("button", name="Close")).to_be_focused()
+    fallback = dialog.get_by_role("link", name=re.compile("Open in a new tab"))
+    assert fallback.get_attribute("target") == "_blank" and "embed=true" not in fallback.get_attribute("href")
+    axe(page)
+    page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
+    expect(cta).to_be_focused()
+
+
+def test_roadmap_teaser_fits_phone_width(ui):
+    page, _api, _errors = ui
+    page.set_viewport_size({"width": 360, "height": 780})
+    _open_report_with_teaser(page)
+    assert page.evaluate("document.documentElement.scrollWidth") <= 360
+    page.get_by_role("link", name=re.compile("Book a call with an expert")).click()
+    expect(page.get_by_role("dialog").get_by_role("button", name="Close")).to_be_in_viewport()
+
+
+def test_roadmap_teaser_hidden_when_booking_disabled(ui, monkeypatch):
+    page, _api, _errors = ui
+    monkeypatch.setenv("EXPERT_BOOKING_URL", "")
+    complete(page, wait_for_review=False)
+    page.get_by_role("link", name="Open report", exact=True).click()
+    expect(page.get_by_text("Local report", exact=True)).to_be_visible()
+    expect(page.get_by_title("Client report")).to_be_visible()
+    expect(page.locator("#roadmap-teaser")).to_have_count(0)
+
+
+def test_roadmap_teaser_hides_zero_count_chips(ui):
+    page, _api, _errors = ui
+    page.route(re.compile(r"https://(app\.)?cal\.com/.*"), lambda route: route.fulfill(content_type="text/html", body="<!doctype html><title>Booking</title>"))
+    complete(page, wait_for_review=False, count=1)
+    page.get_by_role("link", name="Open report", exact=True).click()
+    teaser = page.locator("#roadmap-teaser")
+    teaser.scroll_into_view_if_needed()
+    expect(teaser.locator(".rt-chip")).to_have_text(["1 structural change", "1 area to improve"])
+
+
+def test_website_audit_depth_defaults_to_quick(ui):
+    page, _, _ = ui
+    expect(page.get_by_role("radio", name="Quick")).to_be_checked()
+    assert start(page)["depth"] == "quick"
+
+
+def test_website_audit_depth_can_be_deep(ui):
+    page, _, _ = ui
+    page.get_by_role("radio", name="Deep").check()
+    assert start(page)["depth"] == "deep"
+
+
+def test_ai_review_status_updates_after_the_report_is_ready(ui):
+    page, _, _ = ui
+    complete(page)
+    job_id = page.evaluate("sessionStorage.getItem('uxui-current-audit')")
+    server.JOB_STORE.update(job_id, aiReviewStatus="running")
+    page.goto(page.url.split("/report/")[0] + "/app")
+    expect(page.get_by_text("AI review in progress")).to_be_visible(timeout=10000)
+    server.JOB_STORE.update(job_id, aiReviewStatus="completed")
+    expect(page.get_by_text("AI review added to the report")).to_be_visible(timeout=10000)
+
+
+def test_ai_review_failure_keeps_the_report_available(ui):
+    page, _, _ = ui
+    complete(page)
+    job_id = page.evaluate("sessionStorage.getItem('uxui-current-audit')")
+    server.JOB_STORE.update(job_id, aiReviewStatus="failed", aiReviewError="AI review did not finish: Claude CLI is not available")
+    page.reload()
+    expect(page.get_by_text("The AI review didn’t finish")).to_be_visible(timeout=10000)
+    page.goto(page.url.split("/report/")[0] + "/app")
+    expect(page.get_by_text("The AI review didn’t finish")).to_be_visible(timeout=10000)
+    expect(page.get_by_role("link", name="Open report")).to_be_visible()

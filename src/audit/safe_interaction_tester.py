@@ -7,6 +7,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from src.audit.element_detector import detect_clickables
 from src.audit.page_visit_helpers import dismiss_cookie_banners, wait_for_page_ready
+from src.audit.time_budget import TimeBudget
 from src.utils.file_utils import ensure_dir, join_path
 from src.utils.url_utils import (
     build_page_folder_name,
@@ -312,8 +313,13 @@ async def test_safe_clickables(*, context, page_info, classified_clickables, con
 
     await test_page.route("**/*", interaction_request_guard)
 
+    budget = TimeBudget.from_env()
     try:
         for interaction_sequence, clickable in enumerate(safe_clickables, start=1):
+            if budget.exhausted():
+                # Out of time: the rest of this page's click-tests are not run.
+                skipped_safe_count += len(safe_clickables) - interaction_sequence + 1
+                break
             skip_reason = should_skip_safe_clickable(clickable, page_info["url"], config)
 
             if skip_reason:

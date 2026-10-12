@@ -44,9 +44,9 @@ from src.audit.auth_session import resolve_storage_state, validate_authenticated
 from src.audit.discovery import canonical_url, merge_candidates, related_site
 
 try:
-    from ai_navigation_helper import call_llama_navigation_detector
+    from ai_navigation_helper import call_codex_navigation_detector
 except ImportError:
-    from navigator.ai_navigation_helper import call_llama_navigation_detector
+    from navigator.ai_navigation_helper import call_codex_navigation_detector
 
 DEFAULT_OUTPUT_FILE = PROJECT_ROOT / "shared" / "generated" / "website_menu.json"
 
@@ -2832,6 +2832,7 @@ async def ai_navigation_recovery(
         return current_result, ai_meta
 
     ai_meta["used"] = True
+    ai_meta["provider"] = "codex_cli"
     ai_meta["reason"] = quality["reason"]
 
     try:
@@ -2847,7 +2848,7 @@ async def ai_navigation_recovery(
     screenshot_bytes = await page.screenshot(full_page=False, type="png")
 
     try:
-        ai_result = call_llama_navigation_detector(
+        ai_result = call_codex_navigation_detector(
             screenshot_bytes=screenshot_bytes,
             homepage=homepage,
             mobile=mobile,
@@ -3056,7 +3057,10 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
     ) as client:
         robots_info = await get_robots_info(client, homepage, user_agent, options.debug)
         sitemap_urls = await sitemap_locations(client, homepage, robots_info, options.debug)
-        sitemap_pages, sitemap_limitations = await parse_sitemaps(client, sitemap_urls, options.debug)
+        # Sitemaps download while the browser crawls the homepage; awaited after both views.
+        sitemap_task = asyncio.create_task(parse_sitemaps(client, sitemap_urls, options.debug))
+        # If the browser step fails first, the crawl exits with that error; don't add a second one.
+        sitemap_task.add_done_callback(lambda task: task.cancelled() or task.exception())
 
         async with async_playwright() as pw:
             debug_log(options.debug, "Launching Chromium")
@@ -3106,8 +3110,13 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
                         timeout_ms=options.timeout * 1000,
                     )
                     print("Authenticated session validation passed.")
-                desktop_result = await crawl_single_view(desktop_context, homepage, options, mobile=False)
-                mobile_result = await crawl_single_view(mobile_context, homepage, options, mobile=True)
+                # The two views use independent contexts; crawling them together
+                # saves one full homepage load (about 10 s on heavy sites).
+                desktop_result, mobile_result = await asyncio.gather(
+                    crawl_single_view(desktop_context, homepage, options, mobile=False),
+                    crawl_single_view(mobile_context, homepage, options, mobile=True),
+                )
+                sitemap_pages, sitemap_limitations = await sitemap_task
 
                 merged = merge_nav_results(homepage, desktop_result, mobile_result)
                 merged["requested_language"] = options.locale
@@ -3155,7 +3164,7 @@ def parse_args() -> argparse.Namespace:
         default=str(DEFAULT_OUTPUT_FILE),
         help="Optional output path",
     )
-    parser.add_argument("--use-ai-nav", action="store_true", help="Enable LLaMA/Ollama AI fallback for hidden or weak navigation")
+    parser.add_argument("--use-ai-nav", action="store_true", help="Enable Codex CLI vision fallback for hidden or weak navigation")
     parser.add_argument("--ai-debug-dir", default="ai_nav_debug", help="Directory for AI debug artifacts")
     parser.add_argument("--locale", default="auto", help="Requested browser locale; auto preserves the site's default behavior")
     parser.add_argument("--robots-policy", choices=("respect", "report_only"), default=os.getenv("UX_AUDIT_ROBOTS_POLICY", "respect"), help="Robots policy for automatic page sampling")
@@ -3202,7 +3211,7 @@ async def async_main() -> None:
         print(f"\\nSaved to {output_file}")
 
     except PlaywrightTimeoutError:
-        error = {"error": "Failed to crawl: timeout"}
+        error = {"error": crawl_timeout_message(options.timeout)}
         atomic_write_json(output_file, error)
         print_json(error)
         raise SystemExit(1)
@@ -3218,6 +3227,11 @@ async def async_main() -> None:
         atomic_write_json(output_file, error)
         print_json(error)
         raise SystemExit(1)
+
+
+def crawl_timeout_message(timeout_seconds: int) -> str:
+    return (f"Failed to crawl: the website did not finish loading within {timeout_seconds} s. "
+            "It may be slow right now or limiting automated visits; try again in a few minutes.")
 
 
 def main() -> None:

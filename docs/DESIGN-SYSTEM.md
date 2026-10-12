@@ -1,16 +1,51 @@
 # Design System
 
-## Visual design pass 3
+## Visual design pass 4 — CX Platform alignment
 
-The current application uses solid content surfaces and treats translucency as a functional material. The canvas is #f5f5f7 in light mode and #0b0b0d in dark mode. Reading surfaces are #ffffff / #1c1c1e, with secondary surfaces #f8f8fa / #242426. Accent and keyboard focus use #0066cc in light mode and #0a84ff in dark mode.
+The application now uses the CX Platform design system: white panels on a cool grey page (#f6f7fb), slate text and borders, and the EY palette (gold, navy, yellow) for emphasis rather than decoration. Tokens live in `styles/tokens.css`; the component layer is `styles/cx.css`, loaded last so it overrides the earlier glass rules in `liquid.css` without removing them.
 
-`GlassSurface` supplies the translucent fill, border, highlight, shadow and blur for the floating application toolbar and contextual review action strip. It is not used for findings, evidence, forms, charts, or report content. Reduced-transparency and increased-contrast preferences replace it with an opaque elevated surface.
+- **Actions:** pill buttons. Primary is solid ink (#111827) with white text; secondary is white with a slate-200 border. Dark CTAs lift by 1px on hover (not under reduced motion). Disabled is 50% opacity.
+- **Chrome:** the floating top bar is a white/95 band with a slate-200 border and a light blur. The active nav item is navy. A yellow dot sits beside the EY mark.
+- **Selection:** the selected source card gets a gold top bar and a raised shadow; the selected finding and active tab use a deep-gold indicator. Selection never depends on colour alone (checkmark, inset bar, text weight).
+- **Inputs:** rounded 12px, slate-200 border, deep-gold border plus a soft gold ring on focus.
+- **Labels:** field labels and eyebrows use the uppercase tracked style; eyebrows are deep gold.
+- **Status:** light ground, darker text and a matching border (emerald, rose, amber, sky). Never a saturated fill.
+- **Numbers:** scores, counts and coverage use `tabular-nums`.
 
-The configuration page presents source choices as one shared tray. Its evidence lens combines a blue tint, inset ring, checkmark and short lift to identify the active source without relying on color alone. The setup fields remain content on the canvas instead of appearing in a large enclosing card. Compact controls use 10/14px radii; content uses 18/26px radii; primary actions use a pill radius.
+**Accessibility deviation from CX:** `ey-gold` (#C5A04F) is only 2.5:1 on white, below the 3:1 needed for focus indicators and state markers and the 4.5:1 needed for text. Gold is therefore decorative only (card top bar, progress bar, focus halo). Eyebrows, focus outlines and selection indicators use `ey-gold-deep` (#8A6D00, 4.9:1). Hint and placeholder text use slate-500 rather than slate-400.
 
-Interaction timing is 90ms for press, 140ms for hover, 220ms for selection, and 360ms for configuration entry. Motion explains a state change and is removed for `prefers-reduced-motion`. The toolbar remains independently floating while the page scrolls and its native appearance selector remains visible at every supported width.
+**Font:** Inter first in the stack with system fallbacks. It is not loaded from Google Fonts, because the server CSP is `default-src 'self'`. Self-host the font files if Inter must render everywhere.
 
-**Implemented:** 2026-09-25 · Application only; generated reports retain their own styles.
+**Implemented:** 2026-10-05 · Application only; generated reports retain their own styles.
+
+## Landing page and routes
+
+`/` is the landing page (`landing/Landing.jsx`, `styles/landing.css`); the tool lives at `/app`; reviewed reports at `/report/:id`. The brand mark links home from every page and the report's back link returns to `/app`.
+
+The landing has one hero and one action: **Start an audit** → `/app`, where the source is chosen. A row of 3D source icons under it previews that next step.
+
+The hero is a **UX/UI audit of a real page**: a capture of W3C's Before-and-After Demonstration (inaccessible version, taken from the Internet Archive because w3.org sits behind a bot check). The demo shows one finding per UX dimension, each labelled with its source. The accessibility contrast result (3.88:1 against 4.5:1) is measured by axe-core 4.11 (`landing/assets/w3c-bad-axe.json`); the task, navigation, hierarchy and content findings are expert observations of what is visible in the capture.
+
+A gold scan line sweeps the capture once (about 3.6s, under the WCAG 2.2.2 five-second limit). Each finding's box lands on its element as the line passes, its dimension chip lights up and its row appears in the audit log beside the capture (never on top of it). The log ends with "5 of 5 dimensions checked" and **Replay**. Reduced motion shows the finished state immediately.
+
+The EY Studio+ logo (`assets/ey-studio-plus.png`) is used in the landing header and the app shell.
+
+Below the hero, three benefit cards (Proof for every finding, Scores you can trust, A specialist signs off) each pair a 3D icon with a small proof of what the claim looks like in the tool.
+
+**3D icons** (`components/Icon3D.jsx`): clay-style tiles with a gradient body, extruded base, top highlight and soft shadow. They are used for the four sources (also on the setup cards) and the three benefits. The Figma tile carries the official Figma mark, unaltered.
+
+Text on the gold tint uses `--ey-gold-ink` (#745b00, about 5.5:1); `ey-gold-deep` on that tint is only about 4.5:1.
+
+## Roadmap teaser and expert booking
+
+Every report ends with a lead-generation card (`review/RoadmapTeaser.jsx` in the app; `src/report/roadmap_teaser.py` in exported reports). Both read one stylesheet, `styles/roadmap-teaser.css`, so the surfaces cannot drift.
+
+- Navy card, gold eyebrow, yellow primary CTA (navy text) — the one high-emphasis action on the page.
+- Left: blurred placeholder roadmap rows with a centred lock badge. Placeholders are abstract shapes; **no recommendation text is ever in the DOM or API payload**.
+- Right: heading, one-line value, count chips (singular/plural EN/FR), expert card, CTA.
+- CTA is a real new-tab link to Cal.com; with `<dialog>` support it opens a modal whose Cal.com iframe loads only on click. Esc/backdrop/Close dismiss it and focus returns to the CTA.
+- Motion: 200 ms blur-lift on hover, 220 ms dialog entrance; none under `prefers-reduced-motion`.
+- Events (`window.dataLayer` when present): `roadmap_teaser_viewed`, `booking_cta_clicked`, `booking_completed`.
 
 ## Point of view
 
@@ -20,21 +55,23 @@ Apple Design skill improvement guidance informs hierarchy, progressive disclosur
 
 ## Tokens and type
 
-Semantic colors live in tokens.css, including independent dark luminance layers. Contrast below is calculated against the opaque content surface, not estimated from screenshots.
+Semantic colors live in tokens.css (light only). Contrast is against the white reading surface.
 
-| Role | Light | Contrast on #ffffff | Dark | Contrast on #1d242e |
-| --- | --- | --- | --- | --- |
-| Content | #20252c | 15.41:1 | #f0f2f5 | 13.93:1 |
-| Secondary text | #5e6875 | 5.66:1 | #aeb7c4 | 7.72:1 |
-| Action/focus | #245acc | 6.16:1 | #a5c1ff | 8.68:1 |
-| Error/high severity | #aa3640 | 6.34:1 | #ffb0b7 | 9.04:1 |
-| Warning/medium severity | #80531d | 6.62:1 | #e5c48d | 9.38:1 |
+| Role | Token | Value | Contrast on #ffffff |
+| --- | --- | --- | --- |
+| Content | `--text-primary` | #0f172a slate-900 | 17.9:1 |
+| Secondary text | `--text-secondary` | #475569 slate-600 | 7.6:1 |
+| Hint / meta | `--text-tertiary` | #64748b slate-500 | 4.8:1 |
+| Primary action | `--accent` | #111827 ink (white text) | 17.7:1 |
+| Focus / selection / eyebrow | `--focus`, `--accent-indicator` | #8a6d00 ey-gold-deep | 4.9:1 |
+| Error | `--color-danger` | #be123c rose-700 | 6.3:1 |
+| Warning | `--color-warning` | #b45309 amber-700 | 5.0:1 |
+| Success | `--color-success` | #047857 emerald-700 | 5.5:1 |
+| Info | `--color-info` | #0369a1 sky-700 | 5.9:1 |
 
-Light layers: #f6f7f9 page, #ffffff reading surface, #f3f5f7 navigation/subtle surface. Dark layers: #12161c page, #1d242e reading surface, #283240 navigation/subtle surface. Status fills have separate tokens and text labels.
+Body is .9375rem (15px), metadata .8125rem, eyebrows and field labels 11px bold uppercase, audit titles a 1.5–1.875rem clamp. Short machine IDs/data use the system monospace stack. Reading passages are limited to about 65–70ch.
 
-The native system font stack downloads no fonts. Body/evidence is 1rem (16px default), evidence line-height 1.75, metadata .8125rem, section titles 1.25rem, selected finding titles 1.5rem and audit titles a 1.65–2.15rem clamp. Short machine IDs/data use the system monospace stack. Reading passages are limited to about 65–70ch.
-
-Spacing uses 4/8/12/16/24/32/48/64px. Controls use 8px corners, workspace 12px, setup surface 20px. Controls are at least 44px high; fields 46px. Borders organize data and selection; opaque surfaces carry content. Blur is limited to the top bar and sticky review actions, with an opaque reduced-transparency fallback.
+Spacing uses 4/8/12/16/24/32/48/64px. Buttons and badges are pills; inputs and panels use 12px corners; featured surfaces 16px. Controls are at least 44px high; fields 46px. Borders organize data and selection; opaque surfaces carry content. Blur is limited to the top bar and sticky review actions, with an opaque reduced-transparency fallback.
 
 ## Layout and interaction
 
@@ -64,7 +101,7 @@ At 768px and above the two reading panes have bounded independent scrolling. Bel
 
 Local tab transitions preserve the browser state. Selecting a different finding resets its reading position. Lists render 25 findings at a time. Sticky review feedback identifies the failed action beside its next action. Optional edits and history use native disclosures.
 
-Motion uses 160ms feedback and 240ms disclosure entry. No orchestrated animation is needed for evidence review. Reduced motion disables transitions and indeterminate-bar animation; real stage text remains.
+Motion uses 150ms feedback and 260ms entry. No orchestrated animation is needed for evidence review. Reduced motion disables transitions and indeterminate-bar animation; real stage text remains.
 
 ## Component ownership
 

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: var(--canvas); font-family: var(--font); color: var(--ink); overflow: hidden; }
+        #input-lines { position: absolute; left: 150px; top: 330px; width: 660px; display: flex; flex-direction: column; gap: 14px; }
+        .input-line { margin: 0; font-size: 80px; font-weight: 650; letter-spacing: -.035em; line-height: 1.05; }
+        .input-line:nth-child(3) { color: var(--accent); }
+        #input-window { position: absolute; left: 880px; top: 290px; width: 900px; height: 500px; background: #FFFFFF; border: 1px solid var(--line); border-radius: 26px; box-shadow: 0 40px 90px rgba(31, 36, 48, .12), 0 6px 18px rgba(31, 36, 48, .06); padding: 34px 40px; }
+        .input-dots { display: flex; gap: 9px; margin-bottom: 38px; }
+        .input-dots i { width: 13px; height: 13px; border-radius: 50%; background: var(--line); }
+        #input-title { margin: 0 0 22px; font-size: 30px; font-weight: 650; letter-spacing: -.02em; }
+        #input-row { display: flex; gap: 16px; align-items: center; }
+        #input-field { flex: 1; height: 82px; border: 2px solid var(--accent); border-radius: 18px; display: flex; align-items: center; gap: 16px; padding: 0 24px; font-size: 32px; color: var(--ink); box-shadow: 0 0 0 6px var(--accent-soft); }
+        #input-caret { width: 3px; height: 38px; background: var(--accent); }
+        #input-go { height: 82px; padding: 0 30px; border-radius: 18px; background: var(--accent); color: #FFFFFF; font-size: 28px; font-weight: 650; display: flex; align-items: center; white-space: nowrap; }
+        #input-sources { display: flex; gap: 18px; margin-top: 44px; }
+        .input-source { flex: 1; height: 170px; border: 1px solid var(--line); border-radius: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; font-size: 26px; font-weight: 600; color: var(--ink-2); background: #FFFFFF; }
+        .input-source svg { width: 58px; height: 58px; }
+      </style>
+      <div id="root" data-composition-id="input" data-width="1920" data-height="1080">
+        <div id="input-lines">
+          <p class="input-line">Un lien.</p>
+          <p class="input-line">Une app.</p>
+          <p class="input-line">Une maquette Figma.</p>
+        </div>
+        <div id="input-window">
+          <div class="input-dots"><i></i><i></i><i></i></div>
+          <p id="input-title">Nouvel audit</p>
+          <div id="input-row">
+            <div id="input-field">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#5B6275" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 3 2.6 15 0 18M12 3c-2.6 3-2.6 15 0 18"/></svg>
+              <span id="input-url" data-text="https://exemple.fr"></span><span id="input-caret"></span>
+            </div>
+            <div id="input-go">Lancer un audit</div>
+          </div>
+          <div id="input-sources">
+            <div class="input-source"><svg viewBox="0 0 24 24" fill="none" stroke="#5B3FD9" stroke-width="1.6"><rect x="2.5" y="4" width="19" height="15" rx="2.5"/><path d="M2.5 8.5h19"/><circle cx="5.5" cy="6.3" r=".6" fill="#5B3FD9"/></svg>Site web</div>
+            <div class="input-source"><svg viewBox="0 0 24 24" fill="none" stroke="#5B3FD9" stroke-width="1.6"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg>Application</div>
+            <div class="input-source"><svg viewBox="0 0 24 36"><circle cx="18" cy="18" r="6" fill="#1ABCFE"/><path d="M6 36a6 6 0 0 0 6-6v-6H6a6 6 0 0 0 0 12z" fill="#0ACF83"/><path d="M0 18a6 6 0 0 1 6-6h6v12H6a6 6 0 0 1-6-6z" fill="#A259FF"/><path d="M0 6a6 6 0 0 1 6-6h6v12H6A6 6 0 0 1 0 6z" fill="#F24E1E"/><path d="M12 0h6a6 6 0 0 1 0 12h-6z" fill="#FF7262"/></svg>Figma</div>
+          </div>
+        </div>
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        const url = document.getElementById("input-url"), full = url.dataset.text, typed = { n: 0 };
+        const paint = () => { url.textContent = full.slice(0, Math.round(typed.n)); };
+        paint();
+        gsap.utils.toArray("#input-lines .input-line").forEach((line, i) => revealWords(tl, line, .1 + i * .45));
+        tl.fromTo("#input-window", { opacity: 0, y: 120, rotationX: 16, transformPerspective: 1600, transformOrigin: "50% 100%" },
+          { opacity: 1, y: 0, rotationX: 0, duration: .8, ease: "power3.out" }, 0);
+        tl.fromTo(typed, { n: 0 }, { n: full.length, duration: .8, ease: "none", onUpdate: paint }, .2);
+        tl.fromTo("#input-caret", { opacity: 1 }, { opacity: 0, duration: .12, repeat: 7, yoyo: true, ease: "none" }, 1.05);
+        tl.fromTo(".input-source", { opacity: 0, y: 40, rotationX: 24, transformPerspective: 900 },
+          { opacity: 1, y: 0, rotationX: 0, duration: .55, stagger: .4, ease: "power3.out" }, .35);
+        tl.to(".input-source:first-child", { borderColor: "#5B3FD9", backgroundColor: "#EFEBFF", duration: .25 }, 1.2);
+        tl.to("#input-go", { scale: .96, duration: .1, yoyo: true, repeat: 1, ease: "power2.inOut" }, 2.1);
+        tl.to("#input-window", { scale: 1.6, opacity: 0, filter: "blur(8px)", duration: .3, ease: "power2.in" }, 2.7);
+        tl.to("#input-lines", { opacity: 0, x: -40, duration: .3, ease: "power2.in" }, 2.7);
+        window.__timelines["input"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

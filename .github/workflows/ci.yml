@@ -31,6 +31,8 @@ jobs:
         run: |
           npm run build
           ! rg -n "unpkg\\.com/(react|react-dom|gsap)" src/ui/static/app
+      - name: Test Codex CLI adapters and safe navigation recovery
+        run: uv run pytest -q tests/test_codex_cli_backend.py tests/test_codex_navigation.py
       - name: Install Chromium for website browser E2E
         run: uv run python -m playwright install --with-deps chromium
       - name: Run website browser E2E

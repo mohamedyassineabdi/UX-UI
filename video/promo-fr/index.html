@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="fr" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>EY Studio+ · Audit UX/UI par agent IA (30 s)</title>
+    <script src="lib/gsap.min.js"></script>
+    <script src="lib/dotfield.js"></script>
+    <script src="lib/logo-points.js"></script>
+    <script src="lib/reveal.js"></script>
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="lib/horizon.css" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #FFFFFF; }
+      #main { position: relative; width: 100%; height: 100%; overflow: hidden; background: #FFFFFF; font-family: var(--font); }
+    </style>
+  </head>
+  <body>
+    <div id="main" data-composition-id="main" data-start="0" data-duration="30" data-width="1920" data-height="1080">
+      <div id="hook" data-composition-id="hook" data-composition-src="compositions/hook.html" data-start="0" data-duration="4.5" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="logo" data-composition-id="logo" data-composition-src="compositions/logo.html" data-start="4.5" data-duration="2" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="solution" data-composition-id="solution" data-composition-src="compositions/solution.html" data-start="6.5" data-duration="2.5" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="input" data-composition-id="input" data-composition-src="compositions/input.html" data-start="9" data-duration="3" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="evidence" data-composition-id="evidence" data-composition-src="compositions/evidence.html" data-start="12" data-duration="5" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="stat" data-composition-id="stat" data-composition-src="compositions/stat.html" data-start="17" data-duration="3" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="report-expert" data-composition-id="report-expert" data-composition-src="compositions/report-expert.html" data-start="20" data-duration="6" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="end" data-composition-id="end" data-composition-src="compositions/end.html" data-start="26" data-duration="4" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <audio id="music" src="assets/audio/music-test.mp3" data-start="0" data-duration="30" data-volume="0.55" data-track-index="10"></audio>
+      <audio id="tick-finding-0" src="assets/audio/tick.mp3" data-start="13.2" data-duration="0.4" data-volume="0.8" data-track-index="11"></audio>
+      <audio id="tick-finding-1" src="assets/audio/tick.mp3" data-start="13.9" data-duration="0.4" data-volume="0.8" data-track-index="11"></audio>
+      <audio id="tick-finding-2" src="assets/audio/tick.mp3" data-start="14.6" data-duration="0.4" data-volume="0.8" data-track-index="11"></audio>
+      <audio id="tick-finding-3" src="assets/audio/tick.mp3" data-start="15.3" data-duration="0.4" data-volume="0.8" data-track-index="11"></audio>
+      <audio id="tick-finding-4" src="assets/audio/tick.mp3" data-start="16.0" data-duration="0.4" data-volume="0.8" data-track-index="11"></audio>
+      <audio id="tick-count-0" src="assets/audio/tick.mp3" data-start="17.35" data-duration="0.14" data-volume="0.45" data-track-index="12"></audio>
+      <audio id="tick-count-1" src="assets/audio/tick.mp3" data-start="17.5" data-duration="0.14" data-volume="0.45" data-track-index="12"></audio>
+      <audio id="tick-count-2" src="assets/audio/tick.mp3" data-start="17.65" data-duration="0.14" data-volume="0.45" data-track-index="12"></audio>
+      <audio id="tick-count-3" src="assets/audio/tick.mp3" data-start="17.82" data-duration="0.14" data-volume="0.45" data-track-index="12"></audio>
+      <audio id="tick-count-4" src="assets/audio/tick.mp3" data-start="18.0" data-duration="0.14" data-volume="0.45" data-track-index="12"></audio>
+      <audio id="tick-count-5" src="assets/audio/tick.mp3" data-start="18.22" data-duration="0.14" data-volume="0.45" data-track-index="12"></audio>
+      <audio id="tick-count-6" src="assets/audio/tick.mp3" data-start="18.5" data-duration="0.14" data-volume="0.45" data-track-index="12"></audio>
+      <audio id="tick-count-7" src="assets/audio/tick.mp3" data-start="18.9" data-duration="0.14" data-volume="0.45" data-track-index="12"></audio>
+      <audio id="tick-cta" src="assets/audio/tick.mp3" data-start="25" data-duration="0.4" data-volume="1" data-track-index="13"></audio>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

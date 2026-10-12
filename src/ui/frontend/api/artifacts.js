@@ -18,7 +18,11 @@ export async function getMachineAudit(api, job) {
 export const findingId = finding => String(finding.findingId || finding.id || finding.deduplicationId || "");
 export function machineFindings(machine) {
   const list = machine?.allFindings || machine?.findings || machine?.deduplicatedFindings || machine?.audit?.issues || (machine?.axes || []).flatMap(axis => (axis.painPoints || []).map(item => ({ ...item, axisId: axis.id, axisName: axis.name })));
-  return Array.isArray(list) ? list.filter(item => item && typeof item === "object") : [];
+  const findings = Array.isArray(list) ? list.filter(item => item && typeof item === "object") : [];
+  // AI-agent findings are kept apart by the pipeline; the client report keys them "ai-<index>", so review them under the same key.
+  const known = new Set(findings.map(item => `${item.title}|${item.pageUrl || ""}`));
+  const ai = (Array.isArray(machine?.aiDiscoveredFindings) ? machine.aiDiscoveredFindings : []).map((item, index) => item && typeof item === "object" && !known.has(`${item.title}|${item.pageUrl || ""}`) ? { ...item, findingId: findingId(item) || `ai-${index}`, aiDiscovered: true } : null);
+  return [...findings, ...ai.filter(Boolean)];
 }
 
 // Accept only artifacts belonging to this run. Never send bearer credentials to a report-provided URL.

@@ -23,7 +23,8 @@ from src.audit.page_visit_helpers import dismiss_cookie_banners, extract_basic_p
 from src.audit.html_postprecess import clean_html_output
 from src.audit.rendered_css_extractor import build_rendered_ui_output
 from src.audit.workspace import AuditWorkspace, atomic_write_json
-from src.audit.discovery import DiscoveredPage, coverage_manifest, select_pages
+from src.audit.discovery import DiscoveredPage, coverage_manifest, navigation_order, select_pages
+from src.audit.time_budget import TimeBudget, env_page_limit, heavy_step_skip_reason
 from src.config.audit_config import AUDIT_CONFIG
 from src.security.network_policy import (
     chromium_host_resolver_rules,
@@ -283,6 +284,11 @@ def parse_input_to_pages(raw_input: Any, config: Dict[str, Any]) -> List[Dict[st
     raise ValueError("Input JSON must be either an array of pages or the partner navigation object.")
 
 
+# Optional heavy steps skipped in this run (time budget or per-depth page limit);
+# written to the run summary so the report can state what was not measured.
+SKIPPED_STEPS: List[Dict[str, str]] = []
+
+
 def apply_page_limit(pages: List[Dict[str, Any]], max_pages: int) -> tuple[List[Dict[str, Any]], int]:
     if max_pages <= 0:
         raise ValueError("Maximum audit page count must be positive.")
@@ -476,6 +482,10 @@ async def collect_responsive_mobile_profiles(
     responsive_config = (config.get("presentationChecks") or {}).get("responsiveDesktopMobile") or {}
     if not responsive_config.get("enabled", True):
         return []
+    if TimeBudget.from_env().exhausted():
+        print("Responsive mobile probe skipped: time budget spent.")
+        SKIPPED_STEPS.append({"step": "responsive_mobile_probe", "reason": "time_budget"})
+        return []
     async def worker(page_info, index):
         print(f"[RESP {index + 1}/{len(pages)}] {page_info['name']} -> mobile viewport")
         context = await new_isolated_context(
@@ -665,7 +675,7 @@ async def async_main(
                 str(record.get("label") or ""), set(record.get("discoverySources") or []),
                 page_type=str(record.get("pageType") or "content"), is_auth=bool(record.get("isAuth")), is_legal=bool(record.get("isLegal")), is_external=bool(record.get("isExternal")), selection_status=str(record.get("selectionStatus") or "discovered"), exclusion_reason=str(record.get("exclusionReason") or ""), robots_allowed=record.get("robotsAllowed"), page_id=str(record.get("pageId") or ""),
             ))
-        select_pages(coverage_pages, max_pages)
+        select_pages(coverage_pages, max_pages, navigation_order(raw_input))
         selected_by_url = {page.canonical_url: page for page in coverage_pages if page.selection_status == "selected"}
         unique_pages = [page for page in unique_pages if any(candidate.canonical_url.rstrip("/") == str(page.get("url", "")).rstrip("/") for candidate in selected_by_url.values())]
         # Sitemap-only pages remain selectable even when not present in legacy navigation JSON.
@@ -679,7 +689,7 @@ async def async_main(
         except ValueError as exc:
             raise RuntimeError("UX_AUDIT_MAX_PAGES must be a positive integer.") from exc
         coverage_pages = [DiscoveredPage(str(page.get("url") or ""), str(page.get("url") or ""), str(page.get("name") or ""), {str(page.get("sourceType") or "navigation")}) for page in unique_pages]
-        select_pages(coverage_pages, max_pages)
+        select_pages(coverage_pages, max_pages, navigation_order(raw_input))
     if truncated_page_count:
         print(f"Page candidate limit applied: skipped {truncated_page_count} page(s) before audit execution.")
 
@@ -839,11 +849,21 @@ async def async_main(
     finished_at = datetime.now()
     # Lighthouse is a separate bounded lab measurement.  The URL is validated
     # again inside its runner so redirects/late page state cannot bypass Phase 0.
+    budget = TimeBudget.from_env()
+    lighthouse_limit = env_page_limit("UX_LIGHTHOUSE_MAX_PAGES")
+    measured = 0
     for page_result in page_results:
         if not isinstance(page_result, dict) or page_result.get("status") != "success":
             continue
         page_id = str(page_result.get("pageId") or "")
         audit_url = str(page_result.get("finalUrl") or page_result.get("url") or "")
+        skip = heavy_step_skip_reason(measured, lighthouse_limit, budget)
+        if skip:
+            page_result["lighthouse"] = {"measurement": "not_measured", "status": "skipped", "skipReason": skip,
+                                         "pageId": page_id, "tool": "lighthouse", "dataKind": "lab"}
+            SKIPPED_STEPS.append({"step": "lighthouse", "page": page_id or audit_url, "reason": skip})
+            continue
+        measured += 1
         page_result["lighthouse"] = run_lighthouse(
             url=audit_url, page_id=page_id, artifacts_dir=workspace.lighthouse_dir,
             timeout_seconds=int(os.getenv("UX_LIGHTHOUSE_TIMEOUT_SEC", "120")),
@@ -866,6 +886,11 @@ async def async_main(
         "uniquePagesVisited": len(unique_pages),
         "candidatePagesTruncated": truncated_page_count,
         "pageLimit": max_pages,
+        "skippedSteps": SKIPPED_STEPS + [
+            {"step": "interaction_tests", "page": str(result.get("pageId") or result.get("originalUrl") or result.get("url") or ""), "reason": result["interactionSummary"]["skippedReason"]}
+            for result in page_results
+            if isinstance(result, dict) and (result.get("interactionSummary") or {}).get("skippedReason")
+        ],
         "coverageManifest": str(workspace.coverage_manifest),
         "coverageStatus": manifest["summary"]["coverageStatus"],
         "coverageRatio": manifest["summary"]["coverageRatio"],

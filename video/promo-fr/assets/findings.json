@@ -1,0 +1,67 @@
+[
+ {
+  "axis": "usability",
+  "severity": "high",
+  "measured": false,
+  "box": [
+   626,
+   33,
+   145,
+   19
+  ],
+  "below": false,
+  "fr": "Le menu rapide est une liste déroulante sans libellé ni bouton Valider"
+ },
+ {
+  "axis": "visual",
+  "severity": "low",
+  "measured": false,
+  "box": [
+   175,
+   144,
+   434,
+   69
+  ],
+  "below": false,
+  "fr": "Trois styles typographiques concurrents dans une même colonne"
+ },
+ {
+  "axis": "navigation",
+  "severity": "medium",
+  "measured": false,
+  "box": [
+   0,
+   146,
+   155,
+   140
+  ],
+  "below": true,
+  "fr": "Le menu n’indique pas la page en cours"
+ },
+ {
+  "axis": "accessibility",
+  "severity": "high",
+  "measured": true,
+  "box": [
+   635,
+   149,
+   104,
+   16
+  ],
+  "below": false,
+  "fr": "Contraste de 3,88:1, 4,5:1 requis"
+ },
+ {
+  "axis": "content",
+  "severity": "medium",
+  "measured": false,
+  "box": [
+   180,
+   487,
+   48,
+   16
+  ],
+  "below": true,
+  "fr": "Les liens « MORE » n’indiquent pas leur destination"
+ }
+]

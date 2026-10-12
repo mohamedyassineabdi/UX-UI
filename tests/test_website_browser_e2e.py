@@ -209,7 +209,9 @@ def test_authenticated_worker_jobs_collect_isolated_sites(api_server, tmp_path, 
     revision = json.loads(body)
     assert revision["reviewerId"] == "user-a" and revision["reviewStatus"] == "in_review"
     assert request(api_server, "POST", revisions, token="token-b", body=change)[0] == 404
-    assert request(api_server, "POST", f"/api/audits/{alpha_id}/publish", token="token-a", body={"revisionId": revision["revisionId"]})[0] == 409
+    # Saved revisions are deployable without approval (see test_review_workflow);
+    # only the owner may publish.
+    assert request(api_server, "POST", f"/api/audits/{alpha_id}/publish", token="token-b", body={"revisionId": revision["revisionId"]})[0] == 404
     assert request(api_server, "POST", f"/api/audits/{alpha_id}/validate", token="token-b", body={"revisionId": revision["revisionId"]})[0] == 404
     assert request(api_server, "POST", f"/api/audits/{alpha_id}/validate", token="token-a", body={"revisionId": revision["revisionId"]})[0] == 200
     assert request(api_server, "POST", f"/api/audits/{alpha_id}/approve", token="token-a", body={"revisionId": revision["revisionId"]})[0] == 200

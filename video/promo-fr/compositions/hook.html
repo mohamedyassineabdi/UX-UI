@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: #FFFFFF; font-family: var(--font); color: var(--ink); overflow: hidden; }
+        #hook-dots { position: absolute; inset: 0; width: 100%; height: 100%; }
+        #hook-copy { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; text-align: center; }
+        .hook-line { margin: 0; font-size: 76px; font-weight: 600; letter-spacing: -.035em; line-height: 1.08; }
+        #hook-2 { font-size: 112px; font-weight: 700; color: var(--accent); }
+        #hook-3 { color: var(--ink-2); font-weight: 500; }
+      </style>
+      <div id="root" data-composition-id="hook" data-width="1920" data-height="1080">
+        <canvas id="hook-dots" width="1920" height="1080"></canvas>
+        <div id="hook-copy">
+          <p id="hook-1" class="hook-line">Vos utilisateurs ne se plaignent pas.</p>
+          <p id="hook-2" class="hook-line">Ils partent.</p>
+          <p id="hook-3" class="hook-line">Et vous ne savez pas pourquoi.</p>
+        </div>
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        // Dots fade in from the centre, then some fall away as « Ils partent » lands: the users leaving.
+        const field = createDotField(document.getElementById("hook-dots"), { clear: [700, 280] })
+          .appear(0, 1.2)
+          .fall(.3, 1.55, 3.4);
+        bindDotField(tl, field, 4.5);
+        revealWords(tl, document.getElementById("hook-1"), .2);
+        revealWords(tl, document.getElementById("hook-2"), 1.5, { y: 30, duration: .8 });
+        revealWords(tl, document.getElementById("hook-3"), 2.7);
+        hideWords(tl, document.getElementById("hook-copy"), 4.05);
+        window.__timelines["hook"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

@@ -1,0 +1,39 @@
+{
+ "hook": [
+  "Vos utilisateurs ne se plaignent pas.",
+  "Ils partent.",
+  "Et vous ne savez pas pourquoi."
+ ],
+ "solution": {
+  "word": "Audit UX/UI",
+  "subtitle": "mené par un agent IA"
+ },
+ "input": [
+  "Un lien.",
+  "Une app.",
+  "Une maquette Figma."
+ ],
+ "url": "https://exemple.fr",
+ "sources": [
+  "Site web",
+  "Application",
+  "Figma"
+ ],
+ "evidence": "Chaque constat, sa preuve.",
+ "measured": "Mesuré · axe-core",
+ "expertReview": "Revue d’expert",
+ "stat": [
+  "7 axes.",
+  "67 critères."
+ ],
+ "report": "Un rapport prêt pour le comité.",
+ "expert": "Puis un expert UX/UI, pour les recommandations et la refonte.",
+ "expertName": "Sofiene Mhadheb",
+ "expertTitle": "Expert en innovation client et design d'expérience, EY Studio+",
+ "cta": "Réserver un appel avec un expert",
+ "payoff": [
+  "L'agent IA audite.",
+  "L'expert transforme."
+ ],
+ "tagline": "Audit UX/UI par agent IA · EY Studio+"
+}

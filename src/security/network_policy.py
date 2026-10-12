@@ -74,6 +74,25 @@ def _canonical_literal(hostname: str) -> str | None:
     return str(parsed)
 
 
+def _resolve_with_retry(resolve: Resolver, hostname: str, port: int) -> tuple[str, ...]:
+    """Resolve within the timeout, retrying once: system DNS on Windows sometimes stalls on a
+    cold cache. Every answer is still checked by the caller, so a retry cannot weaken the policy."""
+    last_error: BaseException | None = None
+    for _attempt in range(2):
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(lambda: tuple(sorted(set(resolve(hostname, port)))))
+        try:
+            addresses = future.result(timeout=_timeout())
+        except (concurrent.futures.TimeoutError, OSError, socket.gaierror) as exc:
+            future.cancel()
+            executor.shutdown(wait=False, cancel_futures=True)
+            last_error = exc
+            continue
+        executor.shutdown(wait=False)
+        return addresses
+    raise UnsafeURLError("The destination hostname could not be safely resolved.") from last_error
+
+
 def validate_public_url(value: str, *, resolver: Resolver | None = None) -> ValidatedURL:
     raw = str(value or "").strip()
     if not raw or any(ord(ch) < 32 for ch in raw) or "\\" in raw:
@@ -111,16 +130,7 @@ def validate_public_url(value: str, *, resolver: Resolver | None = None) -> Vali
     if literal:
         addresses = (literal,)
     else:
-        resolve = resolver or _system_resolver
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(lambda: tuple(sorted(set(resolve(hostname, port)))))
-        try:
-            addresses = future.result(timeout=_timeout())
-        except (concurrent.futures.TimeoutError, OSError, socket.gaierror) as exc:
-            future.cancel()
-            executor.shutdown(wait=False, cancel_futures=True)
-            raise UnsafeURLError("The destination hostname could not be safely resolved.") from exc
-        executor.shutdown(wait=False)
+        addresses = _resolve_with_retry(resolver or _system_resolver, hostname, port)
     if not addresses or any(not _is_public(address) for address in addresses):
         raise UnsafeURLError("The destination is not public.")
 

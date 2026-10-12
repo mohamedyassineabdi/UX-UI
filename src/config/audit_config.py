@@ -43,12 +43,12 @@ AUDIT_CONFIG = {
         },
     },
     "navigation": {
-        "timeoutMs": 15000,
+        "timeoutMs": _env_int("AUDIT_NAVIGATION_TIMEOUT_MS", 15000),
         "waitUntil": "domcontentloaded",
         "postLoadDelayMs": 300,
     },
     "pageReadiness": {
-        "networkIdleTimeoutMs": 4000,
+        "networkIdleTimeoutMs": _env_int("AUDIT_NETWORK_IDLE_TIMEOUT_MS", 4000),
         "assetTimeoutMs": 5000,
         "settleDelayMs": 350,
     },

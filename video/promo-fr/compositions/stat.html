@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: #FFFFFF; font-family: var(--font); color: var(--ink); overflow: hidden; }
+        #stat-glow { position: absolute; left: 460px; top: 190px; width: 1000px; height: 700px; background: radial-gradient(50% 50% at 50% 50%, rgba(91, 63, 217, .10), rgba(255, 230, 0, .08) 45%, rgba(255, 255, 255, 0) 72%); }
+        #stat-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        #stat-axes { margin: 0 0 4px; font-size: 64px; font-weight: 600; letter-spacing: -.03em; color: var(--ink-2); }
+        #stat-big { margin: 0; display: flex; align-items: baseline; gap: 26px; }
+        #stat-count { font-size: 300px; font-weight: 200; letter-spacing: -.06em; line-height: .9; font-variant-numeric: tabular-nums; color: var(--ink); }
+        #stat-unit { font-size: 84px; font-weight: 650; letter-spacing: -.035em; color: var(--accent); }
+        #stat-orbit { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; margin: 0; padding: 0; list-style: none; }
+        .stat-chip { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 12px 0 24px; background: #FFFFFF; border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 12px 28px rgba(31, 36, 48, .10); font-size: 24px; font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+        .stat-chip b { min-width: 38px; height: 38px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 19px; display: grid; place-items: center; }
+      </style>
+      <div id="root" data-composition-id="stat" data-width="1920" data-height="1080">
+        <div id="stat-glow"></div>
+        <ul id="stat-orbit">
+          <li class="stat-chip" id="stat-chip-0">Utilisabilité<b>10</b></li>
+          <li class="stat-chip" id="stat-chip-1">Navigation<b>9</b></li>
+          <li class="stat-chip" id="stat-chip-2">Design visuel<b>10</b></li>
+          <li class="stat-chip" id="stat-chip-3">Contenu<b>8</b></li>
+          <li class="stat-chip" id="stat-chip-4">Accessibilité<b>12</b></li>
+          <li class="stat-chip" id="stat-chip-5">Performance<b>9</b></li>
+          <li class="stat-chip" id="stat-chip-6">Confiance<b>9</b></li>
+        </ul>
+        <div id="stat-center">
+          <p id="stat-axes">7 axes.</p>
+          <p id="stat-big"><span id="stat-count" data-to="67">0</span><span id="stat-unit">critères.</span></p>
+        </div>
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        const count = document.getElementById("stat-count"), total = Number(count.dataset.to), n = { v: 0 };
+        // The 7 axis chips orbit the counter on an ellipse; their angle is a pure function of the orbit clock.
+        const chips = gsap.utils.toArray(".stat-chip"), orbit = { a: 0 };
+        const sizes = chips.map((chip) => [chip.offsetWidth, chip.offsetHeight]);
+        const placeChips = () => chips.forEach((chip, i) => {
+          const angle = orbit.a + i * Math.PI * 2 / chips.length - Math.PI / 2;
+          const x = 960 + Math.cos(angle) * 770 - sizes[i][0] / 2, y = 540 + Math.sin(angle) * 380 - sizes[i][1] / 2;
+          gsap.set(chip, { x, y });
+        });
+        placeChips();
+        tl.fromTo(orbit, { a: -.5 }, { a: .35, duration: 3, ease: "none", onUpdate: placeChips }, 0);
+        tl.fromTo(chips, { opacity: 0, scale: .6 }, { opacity: 1, scale: 1, duration: .45, stagger: .08, ease: "back.out(1.8)" }, .25);
+        revealWords(tl, document.getElementById("stat-axes"), .05);
+        tl.fromTo("#stat-big", { opacity: 0, y: 30, filter: "blur(16px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: .6, ease: "power3.out" }, .2);
+        tl.fromTo(n, { v: 0 }, { v: total, duration: 1.7, ease: "power2.out", onUpdate: () => { count.textContent = Math.round(n.v); } }, .3);
+        tl.fromTo("#stat-count", { scale: 1 }, { scale: 1.04, duration: .14, yoyo: true, repeat: 1, ease: "power2.out" }, 2.0);
+        tl.to("#stat-center, #stat-orbit", { opacity: 0, scale: 1.12, filter: "blur(8px)", duration: .3, ease: "power2.in" }, 2.7);
+        window.__timelines["stat"] = tl;
+      </script>
+    </template>
+  </body>
+</html>
