@@ -1280,10 +1280,10 @@ def _run_audit_job(job_id: str) -> None:
         "--job-id",
         job_id,
     ]
-    # With the Claude CLI backend, vision runs after the report is ready (see _start_ai_review),
-    # so the timed audit never waits on it.
-    claude_review = mode == "gtm" and vision_backend() == "claude_cli"
-    if mode == "gtm" and (claude_review or _env_flag("GTM_SKIP_VISION", default=False)):
+    # CLI vision runs after the report is ready (see _start_ai_review)
+    # to preserve the timed audit budget for both Claude and Codex.
+    deferred_vision_review = mode == "gtm" and vision_backend() in {"claude_cli", "codex_cli"}
+    if mode == "gtm" and (deferred_vision_review or _env_flag("GTM_SKIP_VISION", default=False)):
         pipeline_command.append("--skip-vision")
     profile = _depth_profile(job.get("depth"))
     started_at = float(job.get("startedAt") or _now())
@@ -1329,12 +1329,12 @@ def _run_audit_job(job_id: str) -> None:
         resultUrl=local_report_url,
         error="",
     )
-    if claude_review:
+    if deferred_vision_review:
         _start_ai_review(job_id)
 
 
 def _start_ai_review(job_id: str) -> None:
-    """Run the Claude vision review in the background; the report is already usable."""
+    """Run a selected CLI vision review after the first report is ready."""
     _set_job(job_id, aiReviewStatus="running", aiReviewError="")
     threading.Thread(target=_run_ai_review, args=(job_id,), name=f"ai-review-{job_id}", daemon=True).start()
 
