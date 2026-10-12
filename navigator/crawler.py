@@ -44,9 +44,9 @@ from src.audit.auth_session import resolve_storage_state, validate_authenticated
 from src.audit.discovery import canonical_url, merge_candidates, related_site
 
 try:
-    from ai_navigation_helper import call_llama_navigation_detector
+    from ai_navigation_helper import call_codex_navigation_detector
 except ImportError:
-    from navigator.ai_navigation_helper import call_llama_navigation_detector
+    from navigator.ai_navigation_helper import call_codex_navigation_detector
 
 DEFAULT_OUTPUT_FILE = PROJECT_ROOT / "shared" / "generated" / "website_menu.json"
 
@@ -2832,6 +2832,7 @@ async def ai_navigation_recovery(
         return current_result, ai_meta
 
     ai_meta["used"] = True
+    ai_meta["provider"] = "codex_cli"
     ai_meta["reason"] = quality["reason"]
 
     try:
@@ -2847,7 +2848,7 @@ async def ai_navigation_recovery(
     screenshot_bytes = await page.screenshot(full_page=False, type="png")
 
     try:
-        ai_result = call_llama_navigation_detector(
+        ai_result = call_codex_navigation_detector(
             screenshot_bytes=screenshot_bytes,
             homepage=homepage,
             mobile=mobile,
@@ -3163,7 +3164,7 @@ def parse_args() -> argparse.Namespace:
         default=str(DEFAULT_OUTPUT_FILE),
         help="Optional output path",
     )
-    parser.add_argument("--use-ai-nav", action="store_true", help="Enable LLaMA/Ollama AI fallback for hidden or weak navigation")
+    parser.add_argument("--use-ai-nav", action="store_true", help="Enable Codex CLI vision fallback for hidden or weak navigation")
     parser.add_argument("--ai-debug-dir", default="ai_nav_debug", help="Directory for AI debug artifacts")
     parser.add_argument("--locale", default="auto", help="Requested browser locale; auto preserves the site's default behavior")
     parser.add_argument("--robots-policy", choices=("respect", "report_only"), default=os.getenv("UX_AUDIT_ROBOTS_POLICY", "respect"), help="Robots policy for automatic page sampling")
