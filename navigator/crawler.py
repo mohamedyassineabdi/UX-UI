@@ -3056,7 +3056,10 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
     ) as client:
         robots_info = await get_robots_info(client, homepage, user_agent, options.debug)
         sitemap_urls = await sitemap_locations(client, homepage, robots_info, options.debug)
-        sitemap_pages, sitemap_limitations = await parse_sitemaps(client, sitemap_urls, options.debug)
+        # Sitemaps download while the browser crawls the homepage; awaited after both views.
+        sitemap_task = asyncio.create_task(parse_sitemaps(client, sitemap_urls, options.debug))
+        # If the browser step fails first, the crawl exits with that error; don't add a second one.
+        sitemap_task.add_done_callback(lambda task: task.cancelled() or task.exception())
 
         async with async_playwright() as pw:
             debug_log(options.debug, "Launching Chromium")
@@ -3106,8 +3109,13 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
                         timeout_ms=options.timeout * 1000,
                     )
                     print("Authenticated session validation passed.")
-                desktop_result = await crawl_single_view(desktop_context, homepage, options, mobile=False)
-                mobile_result = await crawl_single_view(mobile_context, homepage, options, mobile=True)
+                # The two views use independent contexts; crawling them together
+                # saves one full homepage load (about 10 s on heavy sites).
+                desktop_result, mobile_result = await asyncio.gather(
+                    crawl_single_view(desktop_context, homepage, options, mobile=False),
+                    crawl_single_view(mobile_context, homepage, options, mobile=True),
+                )
+                sitemap_pages, sitemap_limitations = await sitemap_task
 
                 merged = merge_nav_results(homepage, desktop_result, mobile_result)
                 merged["requested_language"] = options.locale
@@ -3202,7 +3210,7 @@ async def async_main() -> None:
         print(f"\\nSaved to {output_file}")
 
     except PlaywrightTimeoutError:
-        error = {"error": "Failed to crawl: timeout"}
+        error = {"error": crawl_timeout_message(options.timeout)}
         atomic_write_json(output_file, error)
         print_json(error)
         raise SystemExit(1)
@@ -3218,6 +3226,11 @@ async def async_main() -> None:
         atomic_write_json(output_file, error)
         print_json(error)
         raise SystemExit(1)
+
+
+def crawl_timeout_message(timeout_seconds: int) -> str:
+    return (f"Failed to crawl: the website did not finish loading within {timeout_seconds} s. "
+            "It may be slow right now or limiting automated visits; try again in a few minutes.")
 
 
 def main() -> None:

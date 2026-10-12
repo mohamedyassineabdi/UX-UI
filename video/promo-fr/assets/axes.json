@@ -1,0 +1,37 @@
+[
+ {
+  "id": "usability",
+  "fr": "Utilisabilité",
+  "criteria": 10
+ },
+ {
+  "id": "navigation",
+  "fr": "Navigation",
+  "criteria": 9
+ },
+ {
+  "id": "visual",
+  "fr": "Design visuel",
+  "criteria": 10
+ },
+ {
+  "id": "content",
+  "fr": "Contenu",
+  "criteria": 8
+ },
+ {
+  "id": "accessibility",
+  "fr": "Accessibilité",
+  "criteria": 12
+ },
+ {
+  "id": "performance",
+  "fr": "Performance",
+  "criteria": 9
+ },
+ {
+  "id": "trust",
+  "fr": "Confiance",
+  "criteria": 9
+ }
+]

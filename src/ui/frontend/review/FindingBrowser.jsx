@@ -3,7 +3,9 @@ import { findingId } from "../api/artifacts.js";
 import { Button, Disclosure, Field } from "../components/Primitives.jsx";
 import EvidencePanel, { evidenceText } from "./EvidencePanel.jsx";
 import GuidedFindingEditor from "./GuidedFindingEditor.jsx";
+import ReadableRecord from "../components/ReadableRecord.jsx";
 
+const DETAIL_FIELDS = [["findingId", "Finding ID"], ["severity", "Severity"], ["confidence", "Confidence"], ["axisName", "Audit area"], ["sourceSheet", "Criteria group"], ["ruleId", "Rule"], ["pageName", "Page"], ["pageUrl", "Page URL"], ["evidenceIds", "Evidence IDs"], ["sources", "Sources"], ["confirmationCount", "Confirmed by"]];
 export default function FindingBrowser({ api, job, findings, model, reviewing, initialSeverity, onReview }) {
   const [query, setQuery] = useState("");
   const [severity, setSeverity] = useState(initialSeverity || "");
@@ -50,7 +52,7 @@ export default function FindingBrowser({ api, job, findings, model, reviewing, i
       <EvidencePanel api={api} job={job} finding={active}/>
       {reviewing ? <Disclosure title="Machine interpretation & recommendation">{assessment}</Disclosure> : assessment}
       {reviewing ? <GuidedFindingEditor finding={job.type === "figma" ? { ...active, reviewUnsupported: true } : active} value={model.changes[findingId(active)] || {}} disabled={!!model.busy || model.conflict || !model.review} onChange={model.edit}/> : <div className="finding-review-link"><p>Reviewer decision: <strong>{state(active).replaceAll("_", " ")}</strong></p><Button onClick={onReview}>Review this finding</Button></div>}
-      <Disclosure title="Finding identifier & source record"><pre tabIndex={0}>{JSON.stringify(Object.fromEntries(Object.entries(active).filter(([key]) => key !== "key")), null, 2)}</pre></Disclosure>
+      <Disclosure title="Finding details"><ReadableRecord record={{ ...active, findingId: findingId(active), confidence: typeof active.confidence === "number" ? `${Math.round(active.confidence * 100)}%` : active.confidence }} fields={DETAIL_FIELDS}/></Disclosure>
     </article> : <div className="empty-state"><h3>{rows.length ? "No matching finding" : "No structured findings available"}</h3><p>{rows.length ? "Change your filters to continue." : "Open the source report to inspect the available evidence."}</p></div>}
   </div>;
 }

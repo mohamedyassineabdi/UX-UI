@@ -62,13 +62,13 @@ def test_reviewed_report_preserves_complete_findings_and_escapes_reviewer_text()
     from src.report.reviewed_report import render_reviewed_report, reviewed_report_context
     findings = [{"findingId": f"f{i}", "ruleId": f"r{i}", "outcome": "fail", "evidenceIds": [f"e{i}"], "title": f"Finding {i}"} for i in range(10)]
     machine = {"findings": findings, "priorities": findings[:3], "summary": {"coverageRatio": 0.9}, "executiveSummary": {"overallCoverage": 0.8}}
-    revision = {"revisionId": "a" * 32, "reviewStatus": "validated", "reviewerId": "reviewer", "changes": {"f4": {"suppressed": True, "suppressionReason": "duplicate", "reviewNote": "<script>alert(1)</script>"}}}
+    revision = {"revisionId": "a" * 32, "reviewStatus": "validated", "reviewerId": "reviewer", "changes": {"f4": {"suppressed": True, "suppressionReason": "duplicate"}, "f5": {"reviewNote": "<script>alert(1)</script>"}}}
     context = reviewed_report_context(audit_id="audit", machine=machine, revision=revision)
     report = render_reviewed_report(context)
     assert len(context["priorities"]) == 3 and len(context["completeFindings"]) == 10
-    assert "Suppressed from executive priorities: duplicate" in report
+    assert "Excluded by reviewer" in report and "Finding 4</strong> — duplicate" in report
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in report and "<script>alert(1)</script>" not in report
-    assert "Collection coverage" in report and "Measurement coverage" in report and "Methodology" in report and "Limitations" in report
+    assert "Pages audited" in report and "Methodology" in report and "Limitations" in report
 
 
 def test_publication_snapshot_hash_is_immutable(api_server, monkeypatch):

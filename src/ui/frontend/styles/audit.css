@@ -69,3 +69,14 @@
 @media (max-width: 800px) { .setup-panel { grid-template-columns: 1fr; } .setup-aside { border-left: 0; border-top: 1px solid var(--color-line); } .journey { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; } .journey li { margin-bottom: 18px; gap: 10px; } .source-grid { gap: 10px; } .source-card { padding: 20px 14px; } .source-copy > span { font-size: .72rem; } }
 @media (max-width: 600px) { .source-grid { grid-template-columns: repeat(2, 1fr); } .source-card { padding: 18px 14px; gap: 14px; } .source-copy > span { font-size: .72rem; } .setup-main, .setup-aside { padding: 22px 20px; } .journey { display: block; } .journey li { gap: 16px; } .form-footer { align-items: stretch; flex-direction: column-reverse; text-align: center; gap: 12px; } .form-footer > span { max-width: none; } .form-footer .button { width: 100%; } .section-heading h2 { font-size: 1.12rem; } .progress-panel, .result-panel, .outcome-panel { padding: 22px 20px; } .result-icon { width: 40px; height: 40px; } .result-intro { gap: 12px; } .result-intro h2 { font-size: 1.25rem; } .result-actions { margin-left: 0; } .result-meta { flex-wrap: wrap; gap: 10px; } .progress-footer { align-items: flex-start; flex-direction: column; gap: 8px; } .resource-action { max-width: 100%; } }
 @media (max-width: 600px) { .source-card { padding-block: 15px; gap: 10px; } .source-fieldset { margin-bottom: 24px; } .section-heading { margin-bottom: 22px; } .setup-aside .journey li { margin-bottom: 16px; } }
+
+/* Audit depth: two compact radio cards under the website URL. */
+.depth-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 18px 0 0; padding: 0; border: 0; min-width: 0; }
+.depth-options legend { grid-column: 1 / -1; padding: 0; margin-bottom: 8px; font-weight: 600; font-size: .86rem; }
+.depth-option { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--color-line); border-radius: 12px; cursor: pointer; min-width: 0; }
+.depth-option.is-selected { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+.depth-option input { margin-top: 3px; accent-color: var(--color-primary); }
+.depth-option > span { display: grid; gap: 2px; min-width: 0; }
+.depth-option > span > span { font-size: .78rem; color: var(--color-muted); }
+.depth-option:has(input:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+@media (max-width: 600px) { .depth-options { grid-template-columns: 1fr; } }

@@ -23,12 +23,14 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from dotenv import load_dotenv
 from PIL import Image, UnidentifiedImageError
 
 from src.audit.workspace import AuditWorkspace, atomic_write_json, atomic_write_text
+from src.gtm_audit.vision_client import vision_backend
+from src.report.roadmap_teaser import expert_booking_config, findings_from_report, teaser_payload
 from src.jobs import AuditStorageManager, AuditWorker, JobStatus, JobStore
 from src.security.auth import AuthenticatedUser, AuthenticationError, authenticate_bearer, validate_auth_configuration
 from src.security.network_policy import UnsafeURLError, validate_public_url
@@ -69,6 +71,50 @@ load_dotenv(ROOT_DIR / ".env")
 JOB_PROCESSES: dict[str, subprocess.Popen[str]] = {}
 JOB_PROCESSES_LOCK = threading.Lock()
 CANCELLED_RETURN_CODE = -999
+TIMEOUT_RETURN_CODE = -1
+AUDIT_DEPTHS = ("quick", "deep")
+
+
+@dataclass(frozen=True)
+class DepthProfile:
+    """Per-depth pipeline settings: env overrides, soft time budget, hard stop."""
+    env: dict[str, str]
+    budget_sec: int
+    hard_stop_sec: int
+
+
+DEPTH_PROFILES = {
+    # Homepage + first main-menu page; Lighthouse and click-tests on the homepage only.
+    "quick": DepthProfile(
+        env={
+            "UX_AUDIT_MAX_PAGES": "2",
+            "UX_LIGHTHOUSE_MAX_PAGES": "1",
+            "UX_AUDIT_INTERACTION_MAX_PAGES": "1",
+            "AUDIT_NAVIGATION_TIMEOUT_MS": "10000",
+            "AUDIT_NETWORK_IDLE_TIMEOUT_MS": "2000",
+            # Two pages need the menu, not the whole sitemap (each URL is SSRF-validated).
+            "UX_SITEMAP_MAX_FILES": "1",
+            "UX_SITEMAP_MAX_URLS": "50",
+            "AUDIT_MAX_SAFE_INTERACTIONS_PER_PAGE": "5",
+        },
+        budget_sec=60,
+        hard_stop_sec=180,
+    ),
+    "deep": DepthProfile(
+        env={"UX_AUDIT_MAX_PAGES": "10", "UX_LIGHTHOUSE_MAX_PAGES": "3"},
+        budget_sec=360,
+        hard_stop_sec=600,
+    ),
+}
+
+
+def _depth_profile(depth: str | None) -> DepthProfile:
+    """Jobs created before depths existed carry none and run as quick."""
+    return DEPTH_PROFILES.get(str(depth or "quick"), DEPTH_PROFILES["quick"])
+
+
+def _elapsed_label(seconds: float) -> str:
+    return f"{round(seconds)} s" if seconds < 90 else f"{round(seconds / 60)} min"
 RATE_LIMITER = SlidingWindowRateLimiter()
 LOG = logging.getLogger("ux_ui.audit")
 JOB_STORE = JobStore.from_environment(ROOT_DIR)
@@ -188,7 +234,7 @@ def _now() -> float:
     return time.time()
 
 
-def _new_job(url: str, mode: str) -> dict[str, Any]:
+def _new_job(url: str, mode: str, depth: str = "quick") -> dict[str, Any]:
     job = {
         "id": uuid.uuid4().hex[:12],
         "type": "website",
@@ -196,6 +242,7 @@ def _new_job(url: str, mode: str) -> dict[str, Any]:
         "inputType": "url",
         "url": url,
         "mode": mode,
+        "depth": depth,
         "status": "queued",
         "stage": "Queued",
         "progress": 0,
@@ -388,7 +435,30 @@ def _snapshot_for_request(job: dict[str, Any], handler: BaseHTTPRequestHandler) 
     return payload
 
 
-def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tuple[dict[str, Any], str]:
+_BROWSER_OK = False
+
+
+def _chromium_executable() -> str:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        return playwright.chromium.executable_path
+
+
+def _browser_check() -> str:
+    """Readiness of the audit browser: ok, missing (Playwright without Chromium), or unavailable."""
+    global _BROWSER_OK
+    if _BROWSER_OK:
+        return "ok"  # starting Playwright costs about a second; a found browser stays found
+    try:
+        found = Path(_chromium_executable()).exists()
+    except Exception:
+        return "unavailable"
+    _BROWSER_OK = found
+    return "ok" if found else "missing"
+
+
+def _machine_audit_data(job_id: str) -> dict[str, Any]:
     workspace = AuditWorkspace(job_id, AUDITS_DIR)
     source_root = AUDITS_DIR
     source = workspace.gtm_audit if workspace.gtm_audit.is_file() else workspace.audit_results
@@ -403,9 +473,31 @@ def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tup
         machine = {} if _contains_symlink(source, source_root) else json.loads(source.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         machine = {}
-    from src.report.reviewed_report import render_reviewed_report, reviewed_report_context
-    context = reviewed_report_context(audit_id=job_id, machine=machine, revision=revision)
-    return context, render_reviewed_report(context)
+    return machine if isinstance(machine, dict) else {}
+
+
+CLIENT_REPORT_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
+
+
+def _machine_report_context(job_id: str, revision: dict[str, Any] | None, *, embedded: bool = False) -> tuple[dict[str, Any], str]:
+    """The EY Studio+ client report: in-app view, deployed snapshot and PDF all render from here."""
+    from src.report.client.context import build_client_report_context
+    from src.report.client.crops import crop_all
+    from src.report.client.render import render_client_report
+
+    created = (JOB_STORE.get(job_id) or {}).get("createdAt")
+    audit_date = time.strftime("%Y-%m-%d", time.localtime(created)) if isinstance(created, (int, float)) else None
+    context = build_client_report_context(audit_id=job_id, machine=_machine_audit_data(job_id), revision=revision, audit_date=audit_date)
+    return context, render_client_report(context, crop_all(context["findings"]), embedded=embedded)
+
+
+def _client_report_revision(job_id: str, query: str) -> tuple[bool, dict[str, Any] | None]:
+    """Resolve the optional ?revision= of a client report request: (found, revision)."""
+    revision_id = (parse_qs(query).get("revision") or [""])[0]
+    if not revision_id:
+        return True, None
+    revision = JOB_STORE.get_revision(job_id, revision_id)
+    return revision is not None, revision
 
 
 def _write_publication_snapshot(job_id: str, publication: dict[str, Any], revision: dict[str, Any] | None) -> dict[str, Any]:
@@ -1090,7 +1182,7 @@ def _is_transient_stage_failure(job_id: str) -> bool:
     return any(signal in recent for signal in transient_signals) and not any(signal in recent for signal in deterministic_signals)
 
 
-def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, env_overrides: dict[str, str] | None = None, _attempt: int = 0) -> int:
+def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, env_overrides: dict[str, str] | None = None, stage_timeout: float | None = None, _attempt: int = 0) -> int:
     if _finish_if_cancelled(job_id):
         return CANCELLED_RETURN_CODE
 
@@ -1137,11 +1229,14 @@ def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, 
             if _finish_if_cancelled(job_id):
                 _terminate_process(process)
                 return CANCELLED_RETURN_CODE
-            if time.monotonic() - stage_started > _stage_timeout(stage) or total_elapsed + (time.monotonic() - stage_started) > total_timeout:
+            limit = stage_timeout if stage_timeout is not None else _stage_timeout(stage)
+            if time.monotonic() - stage_started > limit or total_elapsed + (time.monotonic() - stage_started) > total_timeout:
                 _terminate_process(process)
-                _set_job(job_id, status="failed", stage=f"Timed out during {stage}", error=f"Audit timeout during stage: {stage}.")
-                JOB_STORE.event(job_id, "error", "timeout", f"Audit timeout during stage: {stage}.")
-                return -1
+                current = str((JOB_STORE.get(job_id) or {}).get("stage") or stage)
+                message = f"Stopped after {_elapsed_label(total_elapsed + time.monotonic() - stage_started)} while {current[:1].lower()}{current[1:]}."
+                _set_job(job_id, status="failed", stage=f"Timed out during {stage}", error=message)
+                JOB_STORE.event(job_id, "error", "timeout", message)
+                return TIMEOUT_RETURN_CODE
             try:
                 line = lines.get(timeout=0.2)
             except queue.Empty:
@@ -1160,7 +1255,7 @@ def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, 
             delay = min(2.0, 0.2 * (2**_attempt))
             _append_log(job_id, f"Transient {stage} failure; retrying once after {delay:.1f}s.")
             time.sleep(delay)
-            return _run_command(job_id, command, stage=stage, progress=progress, env_overrides=env_overrides, _attempt=_attempt + 1)
+            return _run_command(job_id, command, stage=stage, progress=progress, env_overrides=env_overrides, stage_timeout=stage_timeout, _attempt=_attempt + 1)
         return return_code
     finally:
         with JOB_PROCESSES_LOCK:
@@ -1185,17 +1280,30 @@ def _run_audit_job(job_id: str) -> None:
         "--job-id",
         job_id,
     ]
-    if mode == "gtm" and _env_flag("GTM_SKIP_VISION", default=False):
+    # With the Claude CLI backend, vision runs after the report is ready (see _start_ai_review),
+    # so the timed audit never waits on it.
+    claude_review = mode == "gtm" and vision_backend() == "claude_cli"
+    if mode == "gtm" and (claude_review or _env_flag("GTM_SKIP_VISION", default=False)):
         pipeline_command.append("--skip-vision")
+    profile = _depth_profile(job.get("depth"))
+    started_at = float(job.get("startedAt") or _now())
     pipeline_code = _run_command(
         job_id,
         pipeline_command,
         stage="Running audit pipeline",
         progress=5,
-        env_overrides={"GTM_AUTO_DEPLOY": "0", "GTM_DISABLE_VERCEL_DEPLOY": "1"},
+        env_overrides={
+            "GTM_AUTO_DEPLOY": "0",
+            "GTM_DISABLE_VERCEL_DEPLOY": "1",
+            **profile.env,
+            "UX_AUDIT_DEADLINE": f"{started_at + profile.budget_sec:.3f}",
+        },
+        stage_timeout=profile.hard_stop_sec,
     )
     if pipeline_code == CANCELLED_RETURN_CODE or _finish_if_cancelled(job_id):
         return
+    if pipeline_code == TIMEOUT_RETURN_CODE:
+        return  # _run_command already recorded which stage the hard stop interrupted
     if pipeline_code != 0:
         _set_job(
             job_id,
@@ -1221,6 +1329,42 @@ def _run_audit_job(job_id: str) -> None:
         resultUrl=local_report_url,
         error="",
     )
+    if claude_review:
+        _start_ai_review(job_id)
+
+
+def _start_ai_review(job_id: str) -> None:
+    """Run the Claude vision review in the background; the report is already usable."""
+    _set_job(job_id, aiReviewStatus="running", aiReviewError="")
+    threading.Thread(target=_run_ai_review, args=(job_id,), name=f"ai-review-{job_id}", daemon=True).start()
+
+
+def _run_ai_review(job_id: str) -> None:
+    """Regenerate the GTM audit with vision from the saved evidence, then repackage the report."""
+    workspace = AuditWorkspace(job_id, AUDITS_DIR)
+    timeout = float(os.getenv("GTM_AI_REVIEW_TIMEOUT_SEC", "420"))
+    commands = [
+        [sys.executable, "-m", "src.gtm_audit.generate_gtm_audit",
+         "--website-menu", str(workspace.website_menu), "--cleaned", str(workspace.html_cleaned),
+         "--rendered", str(workspace.rendered_ui), "--checks", str(workspace.checks),
+         "--output", str(workspace.gtm_audit), "--results", str(workspace.audit_results),
+         "--coverage", str(workspace.coverage_manifest), "--audit-context", "public_website"],
+        [sys.executable, "-m", "src.gtm_audit.generate_gtm_report",
+         "--input", str(workspace.gtm_audit), "--output-dir", str(workspace.report)],
+    ]
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    try:
+        for command in commands:
+            completed = subprocess.run(command, cwd=str(ROOT_DIR), env=env, capture_output=True, text=True,
+                                       encoding="utf-8", errors="replace", timeout=timeout)
+            if completed.returncode != 0:
+                detail = (completed.stdout or completed.stderr or "").strip().splitlines()[-1:] or [""]
+                raise RuntimeError(f"{command[2]} exited with {completed.returncode}: {detail[0][:200]}")
+        result_url = _package_local_report(workspace.report, workspace.publication, job_id)
+    except Exception as exc:  # the machine report stays available either way
+        _set_job(job_id, aiReviewStatus="failed", aiReviewError=f"AI review did not finish: {exc}"[:400])
+        return
+    _set_job(job_id, aiReviewStatus="completed", aiReviewError="", resultUrl=result_url)
 
 
 def _run_screenshot_audit_job(job_id: str) -> None:
@@ -1580,7 +1724,8 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         connect_sources = " ".join(sorted(allowed_origins))
-        self.send_header("Content-Security-Policy", f"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+        frame_sources = " frame-src https://cal.com https://app.cal.com;" if expert_booking_config() else ""
+        self.send_header("Content-Security-Policy", f"default-src 'self'; script-src 'self' 'unsafe-inline';{frame_sources} style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -1646,11 +1791,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             checks["storage"] = "error"
         if ready and (JOB_WORKER is None or not JOB_WORKER.healthy()):
             checks["worker"] = "error"
-        try:
-            from playwright.sync_api import executable_path
-            checks["browser"] = "ok" if Path(executable_path).exists() else "missing"
-        except Exception:
-            checks["browser"] = "unavailable"
+        checks["browser"] = _browser_check()
         status = HTTPStatus.OK if all(value == "ok" or (not ready and key in {"worker", "browser"}) for key, value in checks.items()) else HTTPStatus.SERVICE_UNAVAILABLE
         return {"status": "ok" if status == HTTPStatus.OK else "degraded", "service": "ux-ui-auditor", "checks": checks}, status
 
@@ -1696,7 +1837,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             self._send_file(FRONTEND_BUILD_DIR / "index.html")
             return
         if parsed.path == "/" or parsed.path.startswith("/report/") or parsed.path.startswith("/static/") or (not parsed.path.startswith(("/api/", "/audits/", "/artifacts/"))):
-            if parsed.path == "/":
+            if parsed.path in {"/", "/app", "/app/"}:
                 self._send_file(FRONTEND_BUILD_DIR / "index.html")
                 return
             if parsed.path.startswith("/static/"):
@@ -1754,6 +1895,34 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.INTERNAL_SERVER_ERROR,
                 )
             return
+        if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/client-report.pdf"):
+            job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/client-report.pdf").strip("/"))
+            if "/" in job_id or not self._require_owned_job(job_id, user): return
+            found, revision = _client_report_revision(job_id, parsed.query)
+            if not found:
+                self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
+            from src.report.client import pdf as client_pdf
+            context, rendered = _machine_report_context(job_id, revision)
+            try:
+                body = client_pdf.render_pdf(rendered)
+            except client_pdf.PdfExportError as exc:
+                LOG.warning("request_id=%s event=client_report_pdf_failed error=%s", self._request_id(), exc)
+                self._send_json({"error": "PDF export is temporarily unavailable."}, HTTPStatus.SERVICE_UNAVAILABLE); return
+            filename = client_pdf.pdf_filename(context["site"]["name"], context["auditDate"])
+            self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "application/pdf"); self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"'); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(body)
+            return
+        if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/client-report"):
+            job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/client-report").strip("/"))
+            if "/" in job_id or not self._require_owned_job(job_id, user): return
+            found, revision = _client_report_revision(job_id, parsed.query)
+            if not found:
+                self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
+            embedded = (parse_qs(parsed.query).get("embed") or [""])[0] == "1"
+            body = _machine_report_context(job_id, revision, embedded=embedded)[1].encode("utf-8")
+            self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store"); self.send_header("Content-Security-Policy", CLIENT_REPORT_CSP); self.end_headers(); self.wfile.write(body)
+            return
         if parsed.path.startswith("/api/audits/") and "/review-report/" in parsed.path:
             parts = [part for part in unquote(parsed.path).split("/") if part]
             if len(parts) != 5:
@@ -1765,6 +1934,18 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
             _context, rendered = _machine_report_context(job_id, revision)
             body = rendered.encode("utf-8"); self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            return
+        if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/roadmap-teaser"):
+            job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/roadmap-teaser").strip("/"))
+            job = self._require_owned_job(job_id, user)
+            if not job:
+                return
+            machine = _machine_audit_data(job_id)
+            site = machine.get("site") if isinstance(machine.get("site"), dict) else {}
+            lang = (parse_qs(parsed.query).get("lang") or ["en"])[0]
+            site_url = str(job.get("url") or site.get("homepage") or site.get("url") or "")
+            payload = teaser_payload(findings_from_report(machine), lang=lang, site_url=site_url, report_url=None)
+            self._send_json(payload or {"enabled": False})
             return
         if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/review"):
             job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/review").strip("/"))
@@ -1961,8 +2142,11 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                         raise ValueError("Audit mode must be either detailed or gtm.")
                     if mode == "detailed" and not _detailed_workbook_template_available():
                         raise ValueError("Detailed audits are unavailable because no configured workbook template exists.")
+                    depth = str(data.get("depth") or "quick").strip().lower()
+                    if depth not in AUDIT_DEPTHS:
+                        raise ValueError("Audit depth must be either quick or deep.")
                     url = _validate_url(str(data.get("url") or ""))
-                    job = _new_job(url, mode)
+                    job = _new_job(url, mode, depth)
             elif audit_type == "figma":
                     figma_url = _validate_figma_url(str(data.get("figmaUrl") or data.get("url") or ""))
                     job = _new_figma_job(figma_url)

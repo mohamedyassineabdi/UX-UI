@@ -1,0 +1,744 @@
+[
+ {
+  "id": "color-contrast",
+  "impact": "serious",
+  "help": "Elements must meet minimum color contrast ratio thresholds",
+  "tags": [
+   "wcag2aa",
+   "wcag143"
+  ],
+  "nodes": [
+   {
+    "target": "tr[height=\"25px\"]:nth-child(2) > td[bgcolor=\"#A9B8BF\"][width=\"150px\"] > font[color=\"#41545D\"][size=\"2\"] > b",
+    "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.88 (foreground color: #41545d, background color: #a9b8bf, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio ",
+    "box": [
+     885,
+     359,
+     104,
+     16
+    ]
+   },
+   {
+    "target": "tr[height=\"25px\"]:nth-child(7) > td[bgcolor=\"#A9B8BF\"][width=\"150px\"] > font[color=\"#41545D\"][size=\"2\"] > b",
+    "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.88 (foreground color: #41545d, background color: #a9b8bf, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio ",
+    "box": [
+     885,
+     641,
+     115,
+     16
+    ]
+   }
+  ]
+ },
+ {
+  "id": "html-has-lang",
+  "impact": "serious",
+  "help": "<html> element must have a lang attribute",
+  "tags": [
+   "wcag2a",
+   "wcag311"
+  ],
+  "nodes": [
+   {
+    "target": "html",
+    "summary": "Fix any of the following:\n  The <html> element does not have a lang attribute",
+    "box": [
+     0,
+     0,
+     1280,
+     1259
+    ]
+   }
+  ]
+ },
+ {
+  "id": "image-alt",
+  "impact": "critical",
+  "help": "Images must have alternative text",
+  "tags": [
+   "wcag2a",
+   "wcag111"
+  ],
+  "nodes": [
+   {
+    "target": "tr[height=\"10px\"]:nth-child(1) > td[width=\"10px\"]:nth-child(1) > img[height=\"10px\"][width=\"10px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     240,
+     200,
+     10,
+     10
+    ]
+   },
+   {
+    "target": "tr[height=\"10px\"]:nth-child(1) > td[width=\"780px\"] > img[height=\"10px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     250,
+     200,
+     10,
+     10
+    ]
+   },
+   {
+    "target": "tr[height=\"10px\"]:nth-child(1) > td[width=\"10px\"]:nth-child(3) > img[height=\"10px\"][width=\"10px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     1030,
+     200,
+     10,
+     10
+    ]
+   },
+   {
+    "target": "tr:nth-child(2) > td[width=\"10px\"]:nth-child(1) > img[width=\"10px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     240,
+     585,
+     10,
+     10
+    ]
+   },
+   {
+    "target": "img[width=\"24px\"][height=\"86px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     693,
+     210,
+     24,
+     86
+    ]
+   },
+   {
+    "target": "img[width=\"128px\"][height=\"86px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     717,
+     210,
+     128,
+     86
+    ]
+   },
+   {
+    "target": "img[width=\"22px\"][height=\"86px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     845,
+     210,
+     22,
+     86
+    ]
+   },
+   {
+    "target": "img[width=\"158px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     250,
+     296,
+     158,
+     7
+    ]
+   },
+   {
+    "target": "td[colspan=\"5\"][width=\"780px\"] > img[width=\"78px\"][height=\"1px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     250,
+     328,
+     78,
+     1
+    ]
+   },
+   {
+    "target": "td[width=\"155px\"] > img[width=\"78px\"][height=\"1px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     250,
+     354,
+     78,
+     1
+    ]
+   },
+   {
+    "target": "img[width=\"1\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     404,
+     354,
+     1,
+     30
+    ]
+   },
+   {
+    "target": "img[name=\"nav_home\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     265,
+     358,
+     88,
+     27
+    ]
+   },
+   {
+    "target": "tr[height=\"1px\"]:nth-child(3) > td[width=\"154px\"] > img[width=\"78px\"][height=\"1px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     250,
+     389,
+     78,
+     1
+    ]
+   },
+   {
+    "target": "img[name=\"nav_news\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     262,
+     396,
+     90,
+     21
+    ]
+   },
+   {
+    "target": "tr[height=\"1px\"]:nth-child(5) > td[width=\"154px\"] > img[width=\"78px\"][height=\"1px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     250,
+     424,
+     78,
+     1
+    ]
+   },
+   {
+    "target": "img[name=\"nav_facts\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     259,
+     430,
+     105,
+     23
+    ]
+   },
+   {
+    "target": "tr[height=\"1px\"]:nth-child(7) > td[width=\"154px\"] > img[width=\"78px\"][height=\"1px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     250,
+     459,
+     78,
+     1
+    ]
+   },
+   {
+    "target": "img[name=\"nav_survey\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     258,
+     461,
+     107,
+     32
+    ]
+   },
+   {
+    "target": "tr[height=\"1px\"]:nth-child(9) > td[width=\"154px\"] > img[width=\"78px\"][height=\"1px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     250,
+     494,
+     78,
+     1
+    ]
+   },
+   {
+    "target": "td[width=\"20px\"]:nth-child(2) > img[height=\"5px\"][width=\"20px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     405,
+     651,
+     20,
+     5
+    ]
+   },
+   {
+    "target": ".newsheadline:nth-child(1) > img[width=\"23\"][height=\"24\"][align=\"absmiddle\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     425,
+     430,
+     23,
+     24
+    ]
+   },
+   {
+    "target": ".newsheadline:nth-child(2) > img[width=\"23\"][height=\"24\"][align=\"absmiddle\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     568,
+     430,
+     23,
+     24
+    ]
+   },
+   {
+    "target": ".newsheadline:nth-child(3) > img[width=\"23\"][height=\"24\"][align=\"absmiddle\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     711,
+     430,
+     23,
+     24
+    ]
+   },
+   {
+    "target": "td[width=\"20px\"]:nth-child(4) > img[height=\"5px\"][width=\"20px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     859,
+     651,
+     20,
+     5
+    ]
+   },
+   {
+    "target": "img[height=\"30px\"][width=\"1px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     879,
+     354,
+     1,
+     30
+    ]
+   },
+   {
+    "target": "td[width=\"151px\"] > img[width=\"78px\"][height=\"1px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     880,
+     354,
+     78,
+     1
+    ]
+   },
+   {
+    "target": "img[height=\"106px\"][width=\"150px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     880,
+     380,
+     150,
+     106
+    ]
+   },
+   {
+    "target": "td[width=\"150px\"] > img[width=\"78px\"][height=\"1px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     880,
+     636,
+     78,
+     1
+    ]
+   },
+   {
+    "target": "img[height=\"154px\"][width=\"150px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     880,
+     662,
+     150,
+     154
+    ]
+   },
+   {
+    "target": "tr:nth-child(2) > td[width=\"10px\"]:nth-child(3) > img[width=\"10px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     1030,
+     585,
+     10,
+     10
+    ]
+   },
+   {
+    "target": "td[height=\"10px\"][width=\"10px\"]:nth-child(1) > img[height=\"10px\"][width=\"10px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     240,
+     971,
+     10,
+     10
+    ]
+   },
+   {
+    "target": "td[width=\"780px\"][height=\"10px\"] > img[height=\"10px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     250,
+     971,
+     10,
+     10
+    ]
+   },
+   {
+    "target": "td[height=\"10px\"][width=\"10px\"]:nth-child(3) > img[height=\"10px\"][width=\"10px\"]",
+    "summary": "Fix any of the following:\n  Element does not have an alt attribute\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribute does not exist, references elements that do not exist o",
+    "box": [
+     1030,
+     971,
+     10,
+     10
+    ]
+   }
+  ]
+ },
+ {
+  "id": "landmark-one-main",
+  "impact": "moderate",
+  "help": "Document should have one main landmark",
+  "tags": [],
+  "nodes": [
+   {
+    "target": "html",
+    "summary": "Fix all of the following:\n  Document does not have a main landmark",
+    "box": [
+     0,
+     0,
+     1280,
+     1259
+    ]
+   }
+  ]
+ },
+ {
+  "id": "link-name",
+  "impact": "serious",
+  "help": "Links must have discernible text",
+  "tags": [
+   "wcag2a",
+   "wcag244",
+   "wcag412"
+  ],
+  "nodes": [
+   {
+    "target": "#home > a[onfocus=\"blur();\"]",
+    "summary": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute d",
+    "box": [
+     250,
+     371,
+     118,
+     17
+    ]
+   },
+   {
+    "target": "#news > a[onfocus=\"blur();\"]",
+    "summary": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute d",
+    "box": [
+     250,
+     403,
+     114,
+     17
+    ]
+   },
+   {
+    "target": "#tickets > a[onfocus=\"blur();\"]",
+    "summary": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute d",
+    "box": [
+     250,
+     439,
+     123,
+     17
+    ]
+   },
+   {
+    "target": "#survey > a[onfocus=\"blur();\"]",
+    "summary": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute d",
+    "box": [
+     250,
+     479,
+     123,
+     17
+    ]
+   },
+   {
+    "target": ".story:nth-child(1) > span > a[href$=\"news.html\"][onfocus=\"blur();\"]",
+    "summary": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute d",
+    "box": [
+     430,
+     697,
+     48,
+     16
+    ]
+   },
+   {
+    "target": ".story:nth-child(2) > span > a[href$=\"news.html\"][onfocus=\"blur();\"]",
+    "summary": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute d",
+    "box": [
+     573,
+     697,
+     48,
+     16
+    ]
+   },
+   {
+    "target": ".story:nth-child(3) > span > a[href$=\"news.html\"][onfocus=\"blur();\"]",
+    "summary": "Fix all of the following:\n  Element is in tab order and does not have accessible text\n\nFix any of the following:\n  Element does not have text that is visible to screen readers\n  aria-label attribute d",
+    "box": [
+     716,
+     697,
+     48,
+     16
+    ]
+   }
+  ]
+ },
+ {
+  "id": "region",
+  "impact": "moderate",
+  "help": "All page content should be contained by landmarks",
+  "tags": [],
+  "nodes": [
+   {
+    "target": "#logos",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     999,
+     24,
+     281,
+     48
+    ]
+   },
+   {
+    "target": "h1",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     10,
+     24,
+     436,
+     49
+    ]
+   },
+   {
+    "target": ".subline",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     10,
+     79,
+     1088,
+     20
+    ]
+   },
+   {
+    "target": "#mnav",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     0,
+     121,
+     1280,
+     31
+    ]
+   },
+   {
+    "target": "#startcontent",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     -16000,
+     -15984,
+     1,
+     1
+    ]
+   },
+   {
+    "target": "tr[height=\"10px\"]:nth-child(1)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     240,
+     200,
+     800,
+     10
+    ]
+   },
+   {
+    "target": "tr:nth-child(2) > td[width=\"10px\"]:nth-child(1)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     240,
+     210,
+     10,
+     761
+    ]
+   },
+   {
+    "target": "table[height=\"144px\"]",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     250,
+     210,
+     780,
+     144
+    ]
+   },
+   {
+    "target": "td[bgcolor=\"#E4E4E4\"]",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     250,
+     354,
+     155,
+     600
+    ]
+   },
+   {
+    "target": "td[width=\"20px\"]:nth-child(2)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     405,
+     354,
+     20,
+     600
+    ]
+   },
+   {
+    "target": ".headline",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     425,
+     354,
+     434,
+     29
+    ]
+   },
+   {
+    "target": "#main > p:nth-child(2)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     425,
+     389,
+     434,
+     34
+    ]
+   },
+   {
+    "target": ".newsbar:nth-child(2)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     425,
+     430,
+     434,
+     51
+    ]
+   },
+   {
+    "target": ".newsbar:nth-child(4)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     425,
+     600,
+     434,
+     119
+    ]
+   },
+   {
+    "target": ".subheadline",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     425,
+     727,
+     434,
+     46
+    ]
+   },
+   {
+    "target": "p:nth-child(7)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     425,
+     779,
+     434,
+     145
+    ]
+   },
+   {
+    "target": "td[width=\"20px\"]:nth-child(4)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     859,
+     354,
+     20,
+     600
+    ]
+   },
+   {
+    "target": "td[width=\"151px\"][valign=\"TOP\"]",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     879,
+     354,
+     151,
+     600
+    ]
+   },
+   {
+    "target": "table[height=\"17px\"][bgcolor=\"#EDEDED\"][cellpadding=\"0px\"]",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     250,
+     954,
+     780,
+     17
+    ]
+   },
+   {
+    "target": "tr:nth-child(2) > td[width=\"10px\"]:nth-child(3)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     1030,
+     210,
+     10,
+     761
+    ]
+   },
+   {
+    "target": "tr[height=\"10px\"]:nth-child(3)",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     240,
+     971,
+     800,
+     10
+    ]
+   },
+   {
+    "target": "#meta-footer",
+    "summary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+    "box": [
+     0,
+     1029,
+     1280,
+     230
+    ]
+   }
+  ]
+ },
+ {
+  "id": "select-name",
+  "impact": "critical",
+  "help": "Select element must have an accessible name",
+  "tags": [
+   "wcag2a",
+   "wcag412"
+  ],
+  "nodes": [
+   {
+    "target": "select",
+    "summary": "Fix any of the following:\n  Element does not have an implicit (wrapped) <label>\n  Element does not have an explicit <label>\n  aria-label attribute does not exist or is empty\n  aria-labelledby attribut",
+    "box": [
+     876,
+     243,
+     145,
+     19
+    ]
+   }
+  ]
+ }
+]

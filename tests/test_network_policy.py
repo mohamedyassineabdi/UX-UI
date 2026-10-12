@@ -139,3 +139,38 @@ def test_only_machine_injected_ssl_keylog_device_paths_are_sanitized(monkeypatch
 
     monkeypatch.setenv("SSLKEYLOGFILE", r"C:\audit\ssl-keys.log")
     assert not sanitize_audit_ssl_keylogfile()
+
+
+def _flaky(results):
+    """A resolver that fails, then answers, from a scripted list."""
+    calls = []
+
+    def resolve(_host, _port):
+        calls.append(1)
+        item = results[min(len(calls), len(results)) - 1]
+        if isinstance(item, Exception):
+            raise item
+        return item
+    return resolve, calls
+
+
+def test_one_transient_dns_failure_is_retried():
+    import socket
+    resolve, calls = _flaky([socket.gaierror(11002, "temporary failure"), ["93.184.216.34"]])
+    assert validate_public_url("https://example.com/", resolver=resolve).hostname == "example.com"
+    assert len(calls) == 2
+
+
+def test_repeated_dns_failure_is_still_rejected():
+    import socket
+    resolve, calls = _flaky([socket.gaierror(11002, "temporary failure")])
+    with pytest.raises(UnsafeURLError, match="could not be safely resolved"):
+        validate_public_url("https://example.com/", resolver=resolve)
+    assert len(calls) == 2
+
+
+def test_retry_still_blocks_private_answers():
+    import socket
+    resolve, _ = _flaky([socket.gaierror(11002, "temporary failure"), ["10.0.0.7"]])
+    with pytest.raises(UnsafeURLError, match="not public"):
+        validate_public_url("https://example.com/", resolver=resolve)

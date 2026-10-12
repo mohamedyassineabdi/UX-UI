@@ -67,3 +67,17 @@ def test_sitemap_urlset_index_duplicates_malformed_and_unsafe_are_bounded(monkey
     assert urls == ["https://example.test/p"]
     assert any(item["reason"] == "malformed_sitemap" for item in limitations)
     assert any(item["reason"] == "unsafe_sitemap_location" for item in limitations)
+
+
+def test_crawl_timeout_message_names_the_wait_and_the_likely_cause():
+    from navigator.crawler import crawl_timeout_message
+
+    message = crawl_timeout_message(30)
+    assert "30 s" in message and "slow" in message
+    assert message.startswith("Failed to crawl:")
+
+
+def test_pipeline_gives_slow_sites_thirty_seconds_per_page():
+    from pathlib import Path
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "run_pipeline.py").read_text(encoding="utf-8")
+    assert 'env_int("WEBSITE_CRAWLER_PAGE_TIMEOUT_SEC", 30)' in source

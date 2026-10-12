@@ -99,3 +99,13 @@ Decision status is independent from rationale provenance. Status: Proposed, In p
 **Consequences / trade-offs:** Publication is a separate explicit review/deployment step.
 **Evidence:** `src/gtm_audit/vercel_static_deploy.py`, [Security Operations](SECURITY_OPERATIONS.md).
 **Related documents:** [Architecture](ARCHITECTURE.md), [Technical Specification](TECHNICAL-SPECIFICATION.md).
+
+## ADR-009: Methodology v3 taxonomy and scoring
+
+**Decision status:** Accepted / Library implemented (not yet wired into generation)
+**Rationale provenance:** Explicitly documented
+**Context:** The five v2 axes mixed concerns, double-counted defects found by several detectors, and reported "insufficient evidence" instead of a score.
+**Decision:** Adopt seven axes (usability, navigation, visual, content, accessibility, performance, trust) with about 70 standards-referenced criteria, four severity levels with key-task escalation, an evidence-eligibility gate, dedupe by logical defect family + page + elements, coverage-qualified scores, maturity levels with caps, and product-type weights. One config file is the source of truth.
+**Consequences / trade-offs:** v3 runs side by side with v2; v2 scoring and the rule registry are unchanged until the migration sub-project. Penalties and weights are calibratable in config.
+**Evidence:** `shared/config/audit_methodology_v3.json`, `src/gtm_audit/methodology_v3/`, `tests/test_methodology_v3_*.py`, [Methodology v3 reference](METHODOLOGY_V3.md).
+**Related documents:** [Methodology v3 spec](superpowers/specs/2026-10-05-ux-audit-methodology-v3-design.md), [Methodology v2 validation](METHODOLOGY_V2_VALIDATION.md).

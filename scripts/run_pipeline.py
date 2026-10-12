@@ -219,7 +219,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         "--json-out",
         website_menu,
         "--timeout",
-        env_int("WEBSITE_CRAWLER_PAGE_TIMEOUT_SEC", 12),
+        env_int("WEBSITE_CRAWLER_PAGE_TIMEOUT_SEC", 30),
     ]
     crawler_args.extend(["--locale", os.getenv("UX_AUDIT_LOCALE", "auto"), "--robots-policy", os.getenv("UX_AUDIT_ROBOTS_POLICY", "respect")])
     if storage_state:

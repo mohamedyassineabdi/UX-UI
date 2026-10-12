@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fr">
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <template>
+      <style>
+        #root { position: absolute; inset: 0; background: #FFFFFF; font-family: var(--font); color: var(--ink); overflow: hidden; --horizon-top: 800px; }
+        #solution-copy { position: absolute; left: 0; right: 0; top: 200px; display: flex; flex-direction: column; align-items: center; gap: 34px; }
+        #solution-word { margin: 0; font-size: 250px; font-weight: 200; letter-spacing: -.05em; line-height: 1; color: var(--ink); white-space: nowrap; }
+        #solution-sub { margin: 0; font-size: 46px; font-weight: 700; letter-spacing: .01em; color: var(--ink-2); white-space: nowrap; }
+        #solution-sub .ch { display: inline-block; white-space: pre; }
+        #solution-sub .ai { color: var(--accent); }
+      </style>
+      <div id="root" data-composition-id="solution" data-width="1920" data-height="1080">
+        <div class="horizon-wrap" id="solution-horizon">
+          <div class="horizon-glow"></div>
+          <div class="horizon"></div>
+        </div>
+        <div id="solution-copy">
+          <h2 id="solution-word">Audit UX/UI</h2>
+          <p id="solution-sub">mené par un <span class="ai">agent IA</span></p>
+        </div>
+      </div>
+      <script>
+        const tl = gsap.timeline({ paused: true });
+        // Subtitle letters reveal one by one, as in the source's « Switch » frame.
+        const sub = document.getElementById("solution-sub");
+        if (!sub.dataset.split) {
+          sub.dataset.split = "1";
+          const parts = [...sub.childNodes];
+          sub.textContent = "";
+          parts.forEach((node) => {
+            const host = node.nodeType === 1 ? sub.appendChild(node.cloneNode(false)) : sub;
+            [...node.textContent].forEach((ch) => {
+              const span = document.createElement("span");
+              span.className = "ch";
+              span.textContent = ch;
+              host.appendChild(span);
+            });
+          });
+        }
+        tl.fromTo("#solution-horizon", { y: 260, opacity: 0 }, { y: 0, opacity: 1, duration: 1.1, ease: "power3.out" }, 0);
+        tl.fromTo("#solution-word", { opacity: 0, scale: 1.06, filter: "blur(24px)" },
+          { opacity: 1, scale: 1, filter: "blur(0px)", duration: .9, ease: "power3.out" }, .1);
+        tl.fromTo("#solution-sub .ch", { opacity: 0, filter: "blur(6px)" },
+          { opacity: 1, filter: "blur(0px)", duration: .25, stagger: .028, ease: "power2.out" }, .75);
+        tl.to("#solution-copy", { scale: 1.08, opacity: 0, filter: "blur(10px)", duration: .3, ease: "power2.in" }, 2.2);
+        window.__timelines["solution"] = tl;
+      </script>
+    </template>
+  </body>
+</html>

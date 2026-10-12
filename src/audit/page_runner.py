@@ -1,4 +1,5 @@
 from src.audit.element_detector import detect_clickables
+from src.audit.time_budget import TimeBudget, env_page_limit, heavy_step_skip_reason
 from src.audit.interaction_classifier import classify_clickables, summarize_classification
 from src.audit.page_visit_helpers import (
     collect_network_log,
@@ -478,12 +479,17 @@ async def run_page_audit(*, context, page_info, page_index, config):
             "unknown": classification_summary["unknown"],
         }
 
-        interaction_test_output = await test_safe_clickables(
-            context=context,
-            page_info=page_info,
-            classified_clickables=classified_clickables,
-            config=config,
-        )
+        interaction_skip = heavy_step_skip_reason(page_index, env_page_limit("UX_AUDIT_INTERACTION_MAX_PAGES"), TimeBudget.from_env())
+        if interaction_skip:
+            interaction_test_output = {"testedCount": 0, "skippedSafeCount": classification_summary["safe"],
+                                       "interactionScreenshotsCreated": 0, "safeInteractionResults": []}
+        else:
+            interaction_test_output = await test_safe_clickables(
+                context=context,
+                page_info=page_info,
+                classified_clickables=classified_clickables,
+                config=config,
+            )
 
         safe_interaction_results = interaction_test_output["safeInteractionResults"]
         result["safeInteractionResults"] = safe_interaction_results
@@ -501,6 +507,7 @@ async def run_page_audit(*, context, page_info, page_index, config):
             "errors": len([item for item in safe_interaction_results if item["outcomeType"] == "error"]),
             "notFound": len([item for item in safe_interaction_results if item["outcomeType"] == "not_found"]),
             "interactionScreenshotsCreated": interaction_test_output["interactionScreenshotsCreated"],
+            "skippedReason": interaction_skip or "",
         }
 
         result["status"] = "success"
