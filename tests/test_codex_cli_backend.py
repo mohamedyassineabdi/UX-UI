@@ -85,3 +85,43 @@ def test_vision_routes_to_codex_without_ollama(monkeypatch, tmp_path):
     assert result["content"] == '{"success":true}'
     assert result["model"] == "codex-cli"
     assert stub.call_args.kwargs["image_paths"] == [path]
+
+
+def test_text_review_preserves_existing_schema_gateway(monkeypatch):
+    from pydantic import BaseModel
+    from src.audit.ai_review_client import AIReviewClient, AIReviewConfig
+
+    class Result(BaseModel):
+        status: str
+
+    config = AIReviewConfig(
+        backend="codex_cli", base_url="codex-cli", api_key="", model="codex-cli",
+        request_spacing_seconds=0,
+    )
+    with patch("src.audit.ai_review_client.run_codex_cli_json", return_value='{"status":"ok"}') as adapter:
+        response = AIReviewClient(config).review_validated_json(
+            "System", {"page": "home"}, schema=Result, prompt_version="test"
+        )
+    assert response["result"] == {"status": "ok"}
+    assert response["metadata"]["provider"] == "codex_cli"
+    assert "page" in adapter.call_args.kwargs["prompt"]
+
+
+def test_bad_json_gets_bounded_schema_correction(monkeypatch):
+    from pydantic import BaseModel
+    from src.audit.ai_review_client import AIReviewClient, AIReviewConfig
+
+    class Result(BaseModel):
+        status: str
+
+    config = AIReviewConfig(
+        backend="codex_cli", base_url="codex-cli", api_key="", model="codex-cli",
+        request_spacing_seconds=0,
+    )
+    with patch("src.audit.ai_review_client.run_codex_cli_json", side_effect=["not-json", '{"status":"ok"}']) as adapter:
+        response = AIReviewClient(config).review_validated_json(
+            "System", {}, schema=Result, prompt_version="test"
+        )
+    assert response["status"] == "completed"
+    assert response["metadata"]["retryCount"] == 1
+    assert adapter.call_count == 2
