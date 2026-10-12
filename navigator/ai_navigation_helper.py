@@ -191,10 +191,9 @@ def _safe_menu_toggle(candidate: Dict[str, Any]) -> bool:
     )
     if any(word in label for word in forbidden):
         return False
-    return bool(
-        any(hint in label for hint in ("menu", "nav", "hamburger", "ouvrir", "menú"))
-        or (bool(candidate.get("icon_like")) and bool(candidate.get("near_top")))
-    )
+    # A generic unlabeled icon might be a cart, account, language switcher,
+    # or another action. Never let AI guess that it is a safe menu control.
+    return any(hint in label for hint in ("menu", "nav", "hamburger", "ouvrir", "menú"))
 
 
 def _validated_result(
